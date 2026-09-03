@@ -1,4 +1,4 @@
-// Parallax Top Bar Controller - Dual Mode: 60 FPS Instant DOM Radar + Deep WASM Vision OCR
+// Parallax Top Bar Controller - High-Resolution Visual Perception Engine
 
 document.addEventListener('DOMContentLoaded', async () => {
   let isScanning = false;
@@ -7,8 +7,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentLogEntryId = null;
   let isDrawerOpen = false;
   let isLiveRadarActive = false;
+  let liveRadarTimer = null;
 
-  // Persistent Web Worker Pool for on-demand Deep OCR
+  // Persistent WebAssembly Worker Pool (Pre-warmed in memory)
   let cachedWorker = null;
   let isWorkerInitializing = false;
 
@@ -84,7 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, '*');
   }
 
-  // Pre-warm Persistent WASM Worker in background for Deep Scan
+  // Pre-warm Persistent WASM Worker in background
   async function getPersistentWorker() {
     if (cachedWorker) return cachedWorker;
     if (isWorkerInitializing) {
@@ -103,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         workerBlobURL: false,
         gzip: true
       });
-      console.log('⚡ [Parallax] Deep WASM OCR Worker warmed in background.');
+      console.log('⚡ [Parallax] WASM OCR Engine warmed in memory.');
     } catch (err) {
       console.error('[Parallax] Worker init error:', err);
     } finally {
@@ -227,122 +228,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // --------------------------------------------------------------------------
-  // Instant 60 FPS DOM Spatial Sync Handler (0ms Latency)
+  // Core Perception Scan Pipeline (ALWAYS renders on the REAL page screenshot)
   // --------------------------------------------------------------------------
-  window.addEventListener('message', async (event) => {
-    if (!event.data || typeof event.data !== 'object') return;
-
-    if (event.data.type === 'PARALLAX_INSTANT_LIVE_SYNC' && isLiveRadarActive) {
-      const { words, piiMatches, isBlocked, sanitizedText, pageUrl, viewportWidth, viewportHeight } = event.data;
-
-      const w = viewportWidth || 1200;
-      const h = viewportHeight || 800;
-
-      // Instant Canvas Painting (60 FPS)
-      if (origCanvas && origWrapper) {
-        origCanvas.width = w;
-        origCanvas.height = h;
-        origWrapper.classList.add('has-img');
-        const ctx = origCanvas.getContext('2d');
-        ctx.fillStyle = '#0a0f1d';
-        ctx.fillRect(0, 0, w, h);
-
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#00f2fe';
-        ctx.fillStyle = 'rgba(0, 242, 254, 0.12)';
-        for (const item of words) {
-          const { x, y, width: bw, height: bh } = item.bbox;
-          ctx.strokeRect(x, y, bw, bh);
-          ctx.fillRect(x, y, bw, bh);
-        }
-      }
-
-      if (sanCanvas && sanWrapper) {
-        sanCanvas.width = w;
-        sanCanvas.height = h;
-        sanWrapper.classList.add('has-img');
-        const sCtx = sanCanvas.getContext('2d');
-        sCtx.fillStyle = '#0a0f1d';
-        sCtx.fillRect(0, 0, w, h);
-
-        // Safe background wireframe
-        sCtx.fillStyle = '#1e293b';
-        for (const item of words) {
-          const { x, y, width: bw, height: bh } = item.bbox;
-          sCtx.fillRect(x, y, bw, bh);
-        }
-
-        // Blackout Sensitive Regions
-        for (const match of piiMatches) {
-          const { x, y, width: bw, height: bh } = match.bbox;
-          const pad = 4;
-          const rx = Math.max(0, x - pad);
-          const ry = Math.max(0, y - pad);
-          const rw = bw + pad * 2;
-          const rh = bh + pad * 2;
-
-          sCtx.fillStyle = '#05070d';
-          sCtx.fillRect(rx, ry, rw, rh);
-          sCtx.strokeStyle = '#10b981';
-          sCtx.lineWidth = 2;
-          sCtx.strokeRect(rx, ry, rw, rh);
-
-          sCtx.font = `bold 11px "JetBrains Mono", monospace`;
-          sCtx.textAlign = 'center';
-          sCtx.textBaseline = 'middle';
-          sCtx.fillStyle = '#34d399';
-          sCtx.fillText(`[${match.type}]`, rx + rw / 2, ry + rh / 2);
-        }
-      }
-
-      if (wordCount) wordCount.textContent = `${words.length} elements`;
-      if (redactCount) redactCount.textContent = `${piiMatches.length} Redacted`;
-      if (showcaseCount) showcaseCount.textContent = `${piiMatches.length} SENSITIVE REGION${piiMatches.length === 1 ? '' : 'S'} PROTECTED`;
-      if (drawerBtnText) drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${piiMatches.length} PII) ▼`;
-
-      // Render Chips
-      let chipsHtml = '';
-      for (const m of piiMatches) {
-        const masked = maskPreview(m.matchedText, m.type);
-        chipsHtml += `
-          <div class="ptb-pii-chip">
-            <div class="ptb-chip-left">
-              <span class="ptb-chip-tag ptb-tag-${m.type}">${m.type}</span>
-              <span class="ptb-chip-text" title="${m.matchedText}">${masked}</span>
-            </div>
-            <span class="ptb-chip-conf conf-high">100% ⚡</span>
-          </div>
-        `;
-      }
-      if (chipsList) chipsList.innerHTML = chipsHtml;
-
-      setStatus(`Live 60FPS Radar (${piiMatches.length} PII Active)`, 'ready');
-      if (sendBtn) sendBtn.disabled = isBlocked;
-
-      currentScanData = {
-        sanitized_ocr_text: sanitizedText,
-        extracted_words: words,
-        pii_matches: piiMatches,
-        status: isBlocked ? 'blocked' : 'ready',
-        is_blocked: isBlocked
-      };
-    }
-  });
-
-  // --------------------------------------------------------------------------
-  // Deep On-Device Vision Scan (WASM OCR Snapshot on button click)
-  // --------------------------------------------------------------------------
-  async function executeDeepVisionScan() {
+  async function executePerceptionScan(isAuto = false) {
     if (isScanning) return;
     isScanning = true;
 
-    if (scanBtn) scanBtn.disabled = true;
-    if (sendBtn) sendBtn.disabled = true;
-    if (approvalCard) approvalCard.classList.remove('open');
-    if (chipsList) chipsList.innerHTML = '';
-    setStatus('Capturing Viewport...', 'capturing');
+    if (!isAuto) {
+      if (scanBtn) scanBtn.disabled = true;
+      if (sendBtn) sendBtn.disabled = true;
+      if (approvalCard) approvalCard.classList.remove('open');
+      if (chipsList) chipsList.innerHTML = '';
+      setStatus('Capturing Viewport...', 'capturing');
+    }
 
     try {
+      // Hide iframe cleanly so it is NEVER captured in the screenshot
       window.parent.postMessage({ type: 'PARALLAX_PREPARE_CAPTURE' }, '*');
       await new Promise((r) => setTimeout(r, 90));
 
@@ -356,6 +257,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       });
 
+      // Restore iframe
       window.parent.postMessage({ type: 'PARALLAX_RESTORE_CAPTURE' }, '*');
 
       if (!captureResponse.success || !captureResponse.dataUrl) {
@@ -365,7 +267,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const screenshotDataUrl = captureResponse.dataUrl;
       const targetPageUrl = captureResponse.pageUrl || 'http://localhost:3001/test-page-normal.html';
 
-      setStatus('Processing Deep Vision OCR...', 'processing');
+      if (!isLiveRadarActive && !isAuto) {
+        setStatus('Processing OCR Locally...', 'processing');
+      }
 
       const worker = await getPersistentWorker();
       if (!worker) throw new Error('WASM Worker failed to initialize');
@@ -402,20 +306,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
       }).filter((w) => w.text.length > 0);
 
+      // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP)
       const piiDetection = PIIDetector.detectPII(extractedWords, { confidenceThreshold: 80.0 });
 
+      // Render Canvases OVER REAL SCREENSHOT IMAGE
       const img = new Image();
       img.onload = async () => {
         const width = img.naturalWidth;
         const height = img.naturalHeight;
 
+        // 1. Original View: Real Webpage Image + Cyan Bounding Boxes
         if (origCanvas && origWrapper) {
           origCanvas.width = width;
           origCanvas.height = height;
           origWrapper.classList.add('has-img');
           const ctx = origCanvas.getContext('2d');
           ctx.clearRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0);
+          ctx.drawImage(img, 0, 0); // Draws the REAL screenshot!
 
           ctx.lineWidth = 2.5;
           ctx.strokeStyle = '#00f2fe';
@@ -427,13 +334,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
+        // 2. Sanitized View: Real Webpage Image + Solid Blackout Privacy Redactions
         if (sanCanvas && sanWrapper) {
           sanCanvas.width = width;
           sanCanvas.height = height;
           sanWrapper.classList.add('has-img');
           const sCtx = sanCanvas.getContext('2d');
           sCtx.clearRect(0, 0, width, height);
-          sCtx.drawImage(img, 0, 0);
+          sCtx.drawImage(img, 0, 0); // Draws the REAL screenshot!
 
           for (const match of piiDetection.matches) {
             const { x, y, width: bw, height: bh } = match.bbox;
@@ -463,8 +371,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (wordCount) wordCount.textContent = `${extractedWords.length} words`;
         if (redactCount) redactCount.textContent = `${piiDetection.matches.length} Redacted`;
         if (showcaseCount) showcaseCount.textContent = `${piiDetection.matches.length} SENSITIVE REGION${piiDetection.matches.length === 1 ? '' : 'S'} PROTECTED`;
-        if (drawerBtnText) drawerBtnText.textContent = `Collapse Showcase (${piiDetection.matches.length} PII) ▲`;
+        if (drawerBtnText) drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${piiDetection.matches.length} PII) ▼`;
 
+        // Render Glass Chips
         let chipsHtml = '';
         for (const m of piiDetection.matches) {
           const masked = maskPreview(m.matchedText, m.type);
@@ -481,7 +390,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (chipsList) chipsList.innerHTML = chipsHtml;
 
-        if (piiDetection.isBlocked) {
+        if (isLiveRadarActive) {
+          setStatus(`Live Radar (Active • ${piiDetection.matches.length} PII Protected)`, 'ready');
+        } else if (piiDetection.isBlocked) {
           setStatus('BLOCKED — Review Required', 'blocked');
           if (sendBtn) sendBtn.disabled = true;
         } else {
@@ -489,6 +400,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (sendBtn) sendBtn.disabled = false;
         }
 
+        // Log to IndexedDB (STRICT METADATA ONLY)
         try {
           const logId = await ParallaxDB.addLog({
             pageUrl: targetPageUrl,
@@ -509,9 +421,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           console.warn('[ParallaxDB] Logging failed:', logErr);
         }
 
-        isDrawerOpen = true;
-        if (drawer) drawer.classList.add('open');
-        resizeHostIframe(true);
+        if (!isAuto) {
+          isDrawerOpen = true;
+          if (drawer) drawer.classList.add('open');
+          resizeHostIframe(true);
+        }
 
         const sanitizedText = PIIDetector.generateSanitizedText(extractedWords, piiDetection.matches);
         currentScanData = {
@@ -526,29 +440,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       img.src = screenshotDataUrl;
 
     } catch (err) {
-      console.error('[Parallax] Deep Scan Error:', err);
-      setStatus(`Error: ${err.message}`, 'error');
+      console.error('[Parallax] Scan Error:', err);
+      if (!isLiveRadarActive) setStatus(`Error: ${err.message}`, 'error');
     } finally {
       isScanning = false;
       if (scanBtn) scanBtn.disabled = false;
     }
   }
 
-  // Live Radar Toggle
+  // Live Radar Loop (Fast Real-Image Perception Loop)
   function startLiveRadar() {
     isLiveRadarActive = true;
     if (liveRadarBtn) liveRadarBtn.classList.add('active');
     if (liveRadarText) liveRadarText.textContent = 'Live Radar: ON';
-    setStatus('Live 60FPS Radar Active', 'ready');
-    window.parent.postMessage({ type: 'PARALLAX_ENABLE_LIVE_RADAR' }, '*');
+    setStatus('Live Radar: Active', 'ready');
+
+    executePerceptionScan(true);
+
+    liveRadarTimer = setInterval(() => {
+      if (isLiveRadarActive && !isScanning) {
+        executePerceptionScan(true);
+      }
+    }, 2000);
   }
 
   function stopLiveRadar() {
     isLiveRadarActive = false;
+    if (liveRadarTimer) {
+      clearInterval(liveRadarTimer);
+      liveRadarTimer = null;
+    }
     if (liveRadarBtn) liveRadarBtn.classList.remove('active');
     if (liveRadarText) liveRadarText.textContent = 'Live Radar: OFF';
     setStatus('Idle', 'idle');
-    window.parent.postMessage({ type: 'PARALLAX_DISABLE_LIVE_RADAR' }, '*');
   }
 
   function toggleLiveRadar() {
@@ -560,7 +484,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (liveRadarBtn) liveRadarBtn.addEventListener('click', toggleLiveRadar);
-  if (scanBtn) scanBtn.addEventListener('click', executeDeepVisionScan);
+  if (scanBtn) scanBtn.addEventListener('click', () => executePerceptionScan(false));
 
   // Handle Send to Backend
   if (sendBtn) {
@@ -714,10 +638,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         ctx.fillStyle = '#00f2fe';
         ctx.font = 'bold 16px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Turn on "Live Radar" or click "Scan Page" first', 400, 240);
+        ctx.fillText('Scan a page first to view in Full Screen', 400, 240);
         ctx.fillStyle = '#94a3b8';
         ctx.font = '13px sans-serif';
-        ctx.fillText('Real-time privacy preview will display here in full screen', 400, 270);
+        ctx.fillText('Click "Scan Page" to run visual perception scan', 400, 270);
       }
       return;
     }
@@ -732,7 +656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       fsModeBadge.textContent = 'ORIGINAL VIEW';
       fsModeBadge.style.background = 'rgba(0, 242, 254, 0.2)';
       fsModeBadge.style.color = '#00f2fe';
-      fsMetaText.textContent = `${wordCount ? wordCount.textContent : '0 elements'} detected • Cyan Bounding Boxes`;
+      fsMetaText.textContent = `${wordCount ? wordCount.textContent : '0 words'} detected • Cyan Bounding Boxes`;
       fsTabOrig.classList.add('active');
       fsTabSan.classList.remove('active');
     } else {
