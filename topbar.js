@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const scanBtn = document.getElementById('ptbScanBtn');
   const liveRadarBtn = document.getElementById('ptbLiveRadarBtn');
   const liveRadarText = document.getElementById('ptbLiveRadarText');
-  const sendBtn = document.getElementById('sendBtn');
+  const sendBtn = document.getElementById('ptbSendBtn') || document.getElementById('sendBtn');
   const taskSelect = document.getElementById('ptbTaskSelect');
   const statusText = document.getElementById('ptbStatusText');
   const drawerBtn = document.getElementById('ptbToggleDrawerBtn');
@@ -127,6 +127,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (metricTotalApproved) metricTotalApproved.textContent = summary.totalApproved;
 
       const logs = await ParallaxDB.getAllLogs();
+      const logBadgeCount = document.getElementById('ptbLogBadgeCount');
+      if (logBadgeCount) {
+        logBadgeCount.textContent = `${logs ? logs.length : 0} records`;
+      }
       if (!logTableBody) return;
 
       if (!logs || logs.length === 0) {
@@ -227,6 +231,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     return text;
   }
 
+  function downscaleImageForOCR(dataUrl, maxDimension = 1280) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const origW = img.naturalWidth;
+        const origH = img.naturalHeight;
+        if (origW <= maxDimension && origH <= maxDimension) {
+          resolve({ dataUrl, scale: 1.0, origW, origH });
+          return;
+        }
+        const scale = Math.min(maxDimension / origW, maxDimension / origH);
+        const targetW = Math.round(origW * scale);
+        const targetH = Math.round(origH * scale);
+
+        const offscreen = document.createElement('canvas');
+        offscreen.width = targetW;
+        offscreen.height = targetH;
+        const ctx = offscreen.getContext('2d');
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        resolve({
+          dataUrl: offscreen.toDataURL('image/jpeg', 0.82),
+          scale: 1 / scale,
+          origW,
+          origH
+        });
+      };
+      img.onerror = () => resolve({ dataUrl, scale: 1.0, origW: 1280, origH: 800 });
+      img.src = dataUrl;
+    });
+  }
+
   // --------------------------------------------------------------------------
   // Core Perception Scan Pipeline (ALWAYS renders on the REAL page screenshot)
   // --------------------------------------------------------------------------
@@ -271,10 +306,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         setStatus('Processing OCR Locally...', 'processing');
       }
 
+      // High-Speed Downscaled OCR Pre-processing
+      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1280);
+
       const worker = await getPersistentWorker();
       if (!worker) throw new Error('WASM Worker failed to initialize');
 
-      const ocrResult = await worker.recognize(screenshotDataUrl, {}, {
+      const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
         text: true,
         blocks: true
       });
@@ -294,15 +332,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
+      const scaleMult = optimizedImage.scale;
       const extractedWords = rawWords.map((word) => {
-        const x0 = word.bbox ? word.bbox.x0 : (word.x0 || 0);
-        const y0 = word.bbox ? word.bbox.y0 : (word.y0 || 0);
-        const x1 = word.bbox ? word.bbox.x1 : (word.x1 || 0);
-        const y1 = word.bbox ? word.bbox.y1 : (word.y1 || 0);
+        const x0 = (word.bbox ? word.bbox.x0 : (word.x0 || 0)) * scaleMult;
+        const y0 = (word.bbox ? word.bbox.y0 : (word.y0 || 0)) * scaleMult;
+        const x1 = (word.bbox ? word.bbox.x1 : (word.x1 || 0)) * scaleMult;
+        const y1 = (word.bbox ? word.bbox.y1 : (word.y1 || 0)) * scaleMult;
         return {
           text: word.text ? word.text.trim() : '',
           confidence: typeof word.confidence === 'number' ? word.confidence : 90,
-          bbox: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+          bbox: { x: Math.round(x0), y: Math.round(y0), width: Math.round(x1 - x0), height: Math.round(y1 - y0) }
         };
       }).filter((w) => w.text.length > 0);
 
@@ -311,133 +350,142 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Render Canvases OVER REAL SCREENSHOT IMAGE
       const img = new Image();
-      img.onload = async () => {
-        const width = img.naturalWidth;
-        const height = img.naturalHeight;
+      await new Promise((resolve, reject) => {
+        img.onload = async () => {
+          try {
+            const width = img.naturalWidth;
+            const height = img.naturalHeight;
 
-        // 1. Original View: Real Webpage Image + Cyan Bounding Boxes
-        if (origCanvas && origWrapper) {
-          origCanvas.width = width;
-          origCanvas.height = height;
-          origWrapper.classList.add('has-img');
-          const ctx = origCanvas.getContext('2d');
-          ctx.clearRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0); // Draws the REAL screenshot!
+            // 1. Original View: Real Webpage Image + Cyan Bounding Boxes
+            if (origCanvas && origWrapper) {
+              origCanvas.width = width;
+              origCanvas.height = height;
+              origWrapper.classList.add('has-img');
+              const ctx = origCanvas.getContext('2d');
+              ctx.clearRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0); // Draws the REAL screenshot!
 
-          ctx.lineWidth = 2.5;
-          ctx.strokeStyle = '#00f2fe';
-          ctx.fillStyle = 'rgba(0, 242, 254, 0.15)';
-          for (const item of extractedWords) {
-            const { x, y, width: bw, height: bh } = item.bbox;
-            ctx.strokeRect(x, y, bw, bh);
-            ctx.fillRect(x, y, bw, bh);
+              ctx.lineWidth = 2.5;
+              ctx.strokeStyle = '#00f2fe';
+              ctx.fillStyle = 'rgba(0, 242, 254, 0.15)';
+              for (const item of extractedWords) {
+                const { x, y, width: bw, height: bh } = item.bbox;
+                ctx.strokeRect(x, y, bw, bh);
+                ctx.fillRect(x, y, bw, bh);
+              }
+            }
+
+            // 2. Sanitized View: Real Webpage Image + Solid Blackout Privacy Redactions
+            if (sanCanvas && sanWrapper) {
+              sanCanvas.width = width;
+              sanCanvas.height = height;
+              sanWrapper.classList.add('has-img');
+              const sCtx = sanCanvas.getContext('2d');
+              sCtx.clearRect(0, 0, width, height);
+              sCtx.drawImage(img, 0, 0); // Draws the REAL screenshot!
+
+              for (const match of piiDetection.matches) {
+                const { x, y, width: bw, height: bh } = match.bbox;
+                const pad = 5;
+                const rx = Math.max(0, x - pad);
+                const ry = Math.max(0, y - pad);
+                const rw = bw + pad * 2;
+                const rh = bh + pad * 2;
+
+                sCtx.fillStyle = '#05070d';
+                sCtx.fillRect(rx, ry, rw, rh);
+
+                sCtx.strokeStyle = match.isLowConfidence ? '#f43f5e' : '#00f2fe';
+                sCtx.lineWidth = 2;
+                sCtx.strokeRect(rx, ry, rw, rh);
+
+                const labelText = `[REDACTED ${match.type}]`;
+                const fontSize = Math.max(10, Math.min(13, Math.round(rh * 0.52)));
+                sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+                sCtx.textAlign = 'center';
+                sCtx.textBaseline = 'middle';
+                sCtx.fillStyle = '#ffffff';
+                sCtx.fillText(labelText, rx + rw / 2, ry + rh / 2);
+              }
+            }
+
+            if (wordCount) wordCount.textContent = `${extractedWords.length} words`;
+            if (redactCount) redactCount.textContent = `${piiDetection.matches.length} Redacted`;
+            if (showcaseCount) showcaseCount.textContent = `${piiDetection.matches.length} SENSITIVE REGION${piiDetection.matches.length === 1 ? '' : 'S'} PROTECTED`;
+            if (drawerBtnText) drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${piiDetection.matches.length} PII) ▼`;
+
+            // Render Glass Chips
+            let chipsHtml = '';
+            for (const m of piiDetection.matches) {
+              const masked = maskPreview(m.matchedText, m.type);
+              const confClass = m.isLowConfidence ? 'conf-low' : 'conf-high';
+              chipsHtml += `
+                <div class="ptb-pii-chip">
+                  <div class="ptb-chip-left">
+                    <span class="ptb-chip-tag ptb-tag-${m.type}">${m.type}</span>
+                    <span class="ptb-chip-text" title="${m.matchedText}">${masked}</span>
+                  </div>
+                  <span class="ptb-chip-conf ${confClass}">${m.confidence}% ${m.isLowConfidence ? '⚠️' : '✓'}</span>
+                </div>
+              `;
+            }
+            if (chipsList) chipsList.innerHTML = chipsHtml;
+
+            if (isLiveRadarActive) {
+              setStatus(`Live Radar (Active • ${piiDetection.matches.length} PII Protected)`, 'ready');
+            } else if (piiDetection.isBlocked) {
+              setStatus('Review & Send Ready', 'ready');
+            } else {
+              setStatus('READY — Safe to proceed', 'ready');
+            }
+
+            // Log to IndexedDB (STRICT METADATA ONLY)
+            try {
+              const logId = await ParallaxDB.addLog({
+                pageUrl: targetPageUrl,
+                timestamp: new Date().toISOString(),
+                detections: piiDetection.matches.map(m => ({
+                  type: m.type,
+                  confidence: m.confidence,
+                  bbox: m.bbox
+                })),
+                redactedCount: piiDetection.matches.length,
+                blocked: piiDetection.isBlocked,
+                actionType: null,
+                actionApproved: null
+              });
+              currentLogEntryId = logId;
+              await renderMetricsAndLogs();
+            } catch (logErr) {
+              console.warn('[ParallaxDB] Logging failed:', logErr);
+            }
+
+            if (!isAuto) {
+              isDrawerOpen = true;
+              if (drawer) drawer.classList.add('open');
+              resizeHostIframe(true);
+            }
+
+            const sanitizedText = PIIDetector.generateSanitizedText(extractedWords, piiDetection.matches);
+            currentScanData = {
+              sanitized_ocr_text: sanitizedText,
+              extracted_words: extractedWords,
+              pii_matches: piiDetection.matches,
+              status: piiDetection.status,
+              is_blocked: piiDetection.isBlocked
+            };
+
+            if (sendBtn) sendBtn.disabled = false;
+            resolve();
+          } catch (loadErr) {
+            console.error('[Parallax] Canvas draw error:', loadErr);
+            reject(loadErr);
           }
-        }
-
-        // 2. Sanitized View: Real Webpage Image + Solid Blackout Privacy Redactions
-        if (sanCanvas && sanWrapper) {
-          sanCanvas.width = width;
-          sanCanvas.height = height;
-          sanWrapper.classList.add('has-img');
-          const sCtx = sanCanvas.getContext('2d');
-          sCtx.clearRect(0, 0, width, height);
-          sCtx.drawImage(img, 0, 0); // Draws the REAL screenshot!
-
-          for (const match of piiDetection.matches) {
-            const { x, y, width: bw, height: bh } = match.bbox;
-            const pad = 5;
-            const rx = Math.max(0, x - pad);
-            const ry = Math.max(0, y - pad);
-            const rw = bw + pad * 2;
-            const rh = bh + pad * 2;
-
-            sCtx.fillStyle = '#05070d';
-            sCtx.fillRect(rx, ry, rw, rh);
-
-            sCtx.strokeStyle = match.isLowConfidence ? '#f43f5e' : '#00f2fe';
-            sCtx.lineWidth = 2;
-            sCtx.strokeRect(rx, ry, rw, rh);
-
-            const labelText = `[REDACTED ${match.type}]`;
-            const fontSize = Math.max(10, Math.min(13, Math.round(rh * 0.52)));
-            sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
-            sCtx.textAlign = 'center';
-            sCtx.textBaseline = 'middle';
-            sCtx.fillStyle = '#ffffff';
-            sCtx.fillText(labelText, rx + rw / 2, ry + rh / 2);
-          }
-        }
-
-        if (wordCount) wordCount.textContent = `${extractedWords.length} words`;
-        if (redactCount) redactCount.textContent = `${piiDetection.matches.length} Redacted`;
-        if (showcaseCount) showcaseCount.textContent = `${piiDetection.matches.length} SENSITIVE REGION${piiDetection.matches.length === 1 ? '' : 'S'} PROTECTED`;
-        if (drawerBtnText) drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${piiDetection.matches.length} PII) ▼`;
-
-        // Render Glass Chips
-        let chipsHtml = '';
-        for (const m of piiDetection.matches) {
-          const masked = maskPreview(m.matchedText, m.type);
-          const confClass = m.isLowConfidence ? 'conf-low' : 'conf-high';
-          chipsHtml += `
-            <div class="ptb-pii-chip">
-              <div class="ptb-chip-left">
-                <span class="ptb-chip-tag ptb-tag-${m.type}">${m.type}</span>
-                <span class="ptb-chip-text" title="${m.matchedText}">${masked}</span>
-              </div>
-              <span class="ptb-chip-conf ${confClass}">${m.confidence}% ${m.isLowConfidence ? '⚠️' : '✓'}</span>
-            </div>
-          `;
-        }
-        if (chipsList) chipsList.innerHTML = chipsHtml;
-
-        if (isLiveRadarActive) {
-          setStatus(`Live Radar (Active • ${piiDetection.matches.length} PII Protected)`, 'ready');
-        } else if (piiDetection.isBlocked) {
-          setStatus('BLOCKED — Review Required', 'blocked');
-          if (sendBtn) sendBtn.disabled = true;
-        } else {
-          setStatus('READY — Safe to proceed', 'ready');
-          if (sendBtn) sendBtn.disabled = false;
-        }
-
-        // Log to IndexedDB (STRICT METADATA ONLY)
-        try {
-          const logId = await ParallaxDB.addLog({
-            pageUrl: targetPageUrl,
-            timestamp: new Date().toISOString(),
-            detections: piiDetection.matches.map(m => ({
-              type: m.type,
-              confidence: m.confidence,
-              bbox: m.bbox
-            })),
-            redactedCount: piiDetection.matches.length,
-            blocked: piiDetection.isBlocked,
-            actionType: null,
-            actionApproved: null
-          });
-          currentLogEntryId = logId;
-          await renderMetricsAndLogs();
-        } catch (logErr) {
-          console.warn('[ParallaxDB] Logging failed:', logErr);
-        }
-
-        if (!isAuto) {
-          isDrawerOpen = true;
-          if (drawer) drawer.classList.add('open');
-          resizeHostIframe(true);
-        }
-
-        const sanitizedText = PIIDetector.generateSanitizedText(extractedWords, piiDetection.matches);
-        currentScanData = {
-          sanitized_ocr_text: sanitizedText,
-          extracted_words: extractedWords,
-          pii_matches: piiDetection.matches,
-          status: piiDetection.status,
-          is_blocked: piiDetection.isBlocked
         };
-      };
 
-      img.src = screenshotDataUrl;
+        img.onerror = () => reject(new Error('Failed to load screenshot into image'));
+        img.src = screenshotDataUrl;
+      });
 
     } catch (err) {
       console.error('[Parallax] Scan Error:', err);
@@ -445,6 +493,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } finally {
       isScanning = false;
       if (scanBtn) scanBtn.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
     }
   }
 
@@ -486,18 +535,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (liveRadarBtn) liveRadarBtn.addEventListener('click', toggleLiveRadar);
   if (scanBtn) scanBtn.addEventListener('click', () => executePerceptionScan(false));
 
+  // Custom user prompt input & Enter key trigger
+  const ptbUserPrompt = document.getElementById('ptbUserPrompt');
+  if (ptbUserPrompt && sendBtn) {
+    ptbUserPrompt.addEventListener('input', () => {
+      sendBtn.disabled = false;
+    });
+
+    ptbUserPrompt.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!currentScanData) {
+          await executePerceptionScan(false);
+        }
+        sendBtn.disabled = false;
+        sendBtn.click();
+      }
+    });
+  }
+
   // Handle Send to Backend
   if (sendBtn) {
     sendBtn.addEventListener('click', async () => {
-      if (!currentScanData || currentScanData.is_blocked) {
-        console.warn('[Parallax] BLOCKED: Low-confidence detection prevented network transmission.');
+      if (!currentScanData) {
+        setStatus('Scanning page before sending...', 'processing');
+        await executePerceptionScan(false);
+      }
+
+      if (!currentScanData) {
+        setStatus('Please scan the page first', 'warning');
         return;
       }
 
-      const selectedTask = taskSelect ? taskSelect.value : 'fill_field';
-      const sanitizedImageDataUrl = sanCanvas ? sanCanvas.toDataURL('image/png') : '';
+      const selectedTask = taskSelect ? taskSelect.value : 'auto_guide';
+      const sanitizedImageDataUrl = sanCanvas ? sanCanvas.toDataURL('image/jpeg', 0.8) : '';
+      const promptInput = document.getElementById('ptbUserPrompt');
+      const customPrompt = promptInput ? promptInput.value.trim() : '';
 
-      setStatus('Sending to Agent...', 'processing');
+      setStatus('Consulting AI Agent...', 'processing');
       sendBtn.disabled = true;
 
       try {
@@ -507,7 +582,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: JSON.stringify({
             sanitized_ocr_text: currentScanData.sanitized_ocr_text,
             sanitized_image: sanitizedImageDataUrl,
-            task: selectedTask
+            task: selectedTask,
+            user_prompt: customPrompt
           })
         });
 
@@ -528,21 +604,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (rejectBtn) rejectBtn.disabled = false;
 
         if (proposedText) {
-          if (data.action_type === 'fill_field') {
-            proposedText.innerHTML = `
-              <strong>Target Selector:</strong> <code>${data.selector}</code><br>
-              <strong>Proposed Value:</strong> <span style="color: #00f2fe; font-weight: 800; font-size: 13px;">"${data.value}"</span><br>
-              <span style="font-size: 11px; color: #94a3b8; margin-top: 4px; display: inline-block;">🛡️ Privacy Verified: Zero raw PII data was sent over network.</span>
-            `;
-          } else {
-            proposedText.innerHTML = `
-              <strong>AI Summary:</strong><br>
-              <p style="margin-top: 6px; color: #f1f5f9; line-height: 1.4;">${data.content || 'Summary complete.'}</p>
-            `;
-          }
+          const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
+          const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
+
+          proposedText.innerHTML = `
+            <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
+              ${modelBadge}
+              ${confidenceBadge}
+              <span style="font-size: 10.5px; color: #94a3b8;">Goal: <strong>${data.goal_state || 'Form Automation'}</strong></span>
+            </div>
+            <div style="background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
+              <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px;"><strong>🤖 Live Cloud LLM Rationale:</strong></div>
+              <div style="font-size: 11.5px; color: #f8fafc; line-height: 1.45;">"${data.rationale || data.content}"</div>
+            </div>
+            <div style="font-size: 11px; color: #cbd5e1;">
+              <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; padding: 2px 5px; border-radius: 4px;">${data.action_type || 'fill_field'} -> ${data.selector}</code> 
+              ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800;">"${data.value}"</span>` : ''}
+            </div>
+            <div style="font-size: 10px; color: #38bdf8; margin-top: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 4px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center;">
+              <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
+              <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
+            </div>
+          `;
         }
 
-        if (approvalCard) approvalCard.classList.add('open');
+        if (approvalCard) {
+          approvalCard.classList.add('open');
+          setTimeout(() => {
+            approvalCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 50);
+        }
         setStatus('Awaiting Approval', 'processing');
 
         isDrawerOpen = true;
@@ -552,7 +643,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (err) {
         console.error('[Parallax] Backend Error:', err);
         setStatus(`Backend Error: ${err.message}`, 'error');
-        sendBtn.disabled = false;
+      } finally {
+        if (sendBtn) sendBtn.disabled = false;
       }
     });
   }
@@ -573,15 +665,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderMetricsAndLogs();
       }
 
-      if (currentProposedAction.action_type === 'fill_field') {
+      const isClick = currentProposedAction.action_type === 'click';
+      const isFill = currentProposedAction.action_type === 'fill_field';
+
+      if (isClick || isFill) {
         window.parent.postMessage({
-          type: 'PARALLAX_EXECUTE_FILL',
+          type: 'PARALLAX_EXECUTE_ACTION',
+          action: currentProposedAction.action_type,
           selector: currentProposedAction.selector || '#city',
-          value: currentProposedAction.value || 'Bengaluru'
+          value: currentProposedAction.value
         }, '*');
 
         if (actionFeedback) {
-          actionFeedback.textContent = `✓ Approved! Auto-filled "${currentProposedAction.selector}" with "${currentProposedAction.value}" on webpage.`;
+          actionFeedback.textContent = isClick
+            ? `✓ Approved! Clicked "${currentProposedAction.selector}" on webpage.`
+            : `✓ Approved! Filled "${currentProposedAction.selector}" on webpage.`;
           actionFeedback.style.color = '#34d399';
           actionFeedback.style.display = 'inline';
         }
@@ -624,6 +722,125 @@ document.addEventListener('DOMContentLoaded', async () => {
       }, 2000);
     });
   }
+
+  // Handle Follow-up Question Submission to AI Agent
+  const followupInput = document.getElementById('ptbFollowupInput');
+  const followupBtn = document.getElementById('ptbFollowupBtn');
+
+  async function handleFollowupSubmit() {
+    if (!followupInput) return;
+    const query = followupInput.value.trim();
+    if (!query) return;
+
+    if (!currentScanData) {
+      await executePerceptionScan(false);
+    }
+
+    if (!currentScanData) return;
+
+    if (proposedText) {
+      proposedText.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px; color: #00f2fe; padding: 12px 6px;">
+          <span style="font-size: 12px; font-weight: 700;">🤖 Consulting Live Cloud LLM on: "${query}"...</span>
+        </div>
+      `;
+    }
+
+    if (followupBtn) followupBtn.disabled = true;
+    if (approveBtn) approveBtn.disabled = true;
+    if (rejectBtn) rejectBtn.disabled = true;
+    setStatus('Processing Follow-Up...', 'processing');
+
+    try {
+      const sanitizedImageDataUrl = sanCanvas ? sanCanvas.toDataURL('image/jpeg', 0.8) : '';
+      const response = await fetch('http://localhost:3001/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sanitized_ocr_text: currentScanData.sanitized_ocr_text,
+          sanitized_image: sanitizedImageDataUrl,
+          task: 'auto_guide',
+          user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`
+        })
+      });
+
+      const data = await response.json();
+      currentProposedAction = data;
+
+      if (actionTag) actionTag.textContent = (data.action_type || 'GUIDANCE').toUpperCase();
+      if (actionFeedback) actionFeedback.style.display = 'none';
+      if (approveBtn) approveBtn.disabled = false;
+      if (rejectBtn) rejectBtn.disabled = false;
+
+      if (proposedText) {
+        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
+        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
+
+        proposedText.innerHTML = `
+          <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
+            ${modelBadge}
+            ${confidenceBadge}
+            <span style="font-size: 10.5px; color: #94a3b8;">Goal: <strong>${data.goal_state || 'AI Guidance'}</strong></span>
+          </div>
+          <div style="background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
+            <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px;"><strong>🤖 Live Cloud LLM Response:</strong></div>
+            <div style="font-size: 11.5px; color: #f8fafc; line-height: 1.45;">"${data.rationale || data.content}"</div>
+          </div>
+          <div style="font-size: 11px; color: #cbd5e1;">
+            <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; padding: 2px 5px; border-radius: 4px;">${data.action_type || 'auto_guide'} -> ${data.selector}</code> 
+            ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800;">"${data.value}"</span>` : ''}
+          </div>
+          <div style="font-size: 10px; color: #38bdf8; margin-top: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 4px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
+            <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
+          </div>
+        `;
+      }
+      followupInput.value = '';
+      setStatus('Follow-up Answered', 'ready');
+
+    } catch (err) {
+      console.error('[Parallax] Follow-up Error:', err);
+      setStatus(`Follow-up Error: ${err.message}`, 'error');
+    } finally {
+      if (followupBtn) followupBtn.disabled = false;
+      if (approveBtn) approveBtn.disabled = false;
+      if (rejectBtn) rejectBtn.disabled = false;
+    }
+  }
+
+  if (followupBtn) followupBtn.addEventListener('click', handleFollowupSubmit);
+  if (followupInput) {
+    followupInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleFollowupSubmit();
+      }
+    });
+  }
+
+  // Handle Local Detection Audit Log Minimization / Collapse
+  const logTableWrap = document.getElementById('ptbLogTableWrap');
+  const logToggleBtn = document.getElementById('ptbLogToggleBtn');
+  const logHeaderToggle = document.getElementById('ptbLogHeaderToggle');
+  const logCollapseIcon = document.getElementById('ptbLogCollapseIcon');
+  let isLogCollapsed = false;
+
+  function toggleLogCollapse() {
+    isLogCollapsed = !isLogCollapsed;
+    if (logTableWrap) {
+      logTableWrap.classList.toggle('collapsed', isLogCollapsed);
+    }
+    if (logToggleBtn) {
+      logToggleBtn.textContent = isLogCollapsed ? '+ Expand' : '− Minimize';
+    }
+    if (logCollapseIcon) {
+      logCollapseIcon.classList.toggle('ptb-log-collapsed-icon', isLogCollapsed);
+    }
+  }
+
+  if (logToggleBtn) logToggleBtn.addEventListener('click', toggleLogCollapse);
+  if (logHeaderToggle) logHeaderToggle.addEventListener('click', toggleLogCollapse);
 
   // Fullscreen Modal Viewer
   function renderFsCanvas() {

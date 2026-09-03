@@ -9,7 +9,8 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs & Temp
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+scratch/

@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Parallax - Privacy-Preserving Browser Vision Agent",
+  "version": "1.0.0",
+  "description": "Guides users on webpages through cloud LLMs without ever exposing raw sensitive screen content.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Parallax Vision Agent"
+  },
+  "background": {
+    "service_worker": "dist/background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "dist/content/dom-reader.js",
+        "dist/content/action-executor.js"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "dist/*",
+        "popup/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  }
+}

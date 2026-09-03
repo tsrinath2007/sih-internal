@@ -94,7 +94,7 @@
    * Main PII detection function (Strictly EMAIL, PHONE, CARD, OTP)
    */
   function detectPII(words, options = {}) {
-    const confidenceThreshold = options.confidenceThreshold || 80.0;
+    const confidenceThreshold = options.confidenceThreshold != null ? options.confidenceThreshold : 35.0;
     const matches = [];
     const usedWordIndices = new Set();
 

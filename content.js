@@ -27,7 +27,7 @@
   let isLiveRadarActive = false;
   let liveRadarDebounceTimer = null;
 
-  // 2. Inject Live In-Page DOM Shield Styles into Host Page
+  // 2. Inject Clean Focus Highlight Styles into Host Page
   const styleEl = document.createElement('style');
   styleEl.id = 'parallax-live-shield-styles';
   styleEl.textContent = `
@@ -40,36 +40,6 @@
     @keyframes parallaxPulseRing {
       from { box-shadow: 0 0 10px rgba(0, 242, 254, 0.5); }
       to { box-shadow: 0 0 30px rgba(0, 242, 254, 0.9); }
-    }
-
-    .parallax-live-shielded {
-      border-color: #10b981 !important;
-      box-shadow: 0 0 14px rgba(16, 185, 129, 0.4) !important;
-      position: relative !important;
-    }
-
-    .parallax-live-badge {
-      position: absolute;
-      z-index: 2147483640;
-      background: rgba(6, 10, 18, 0.95);
-      border: 1px solid #10b981;
-      color: #34d399;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      padding: 3px 8px;
-      border-radius: 6px;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.6), 0 0 10px rgba(16, 185, 129, 0.4);
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      pointer-events: none;
-      animation: parallaxBadgePop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    @keyframes parallaxBadgePop {
-      from { transform: translateY(4px) scale(0.9); opacity: 0; }
-      to { transform: translateY(0) scale(1); opacity: 1; }
     }
   `;
   document.head.appendChild(styleEl);
@@ -173,91 +143,13 @@
     }, '*');
   }
 
-  // 4. Live Real-Time PII Input Evaluator (In-Page Floating Badges)
-  const activeBadges = new Map();
-
-  function evaluateFieldPrivacy(target) {
-    if (!target || !(target instanceof HTMLElement)) return;
-    if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') return;
-
-    const val = (target.value || '').trim();
-    if (!val || val.length < 3) {
-      removeBadge(target);
-      return;
-    }
-
-    const digitsOnly = val.replace(/\D/g, '');
-    let detectedType = null;
-
-    if (/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(val)) {
-      detectedType = 'EMAIL';
-    } else if (
-      /^\+?91[\s\-]?[6-9]\d{9}$/.test(val.replace(/\s+/g, '')) ||
-      (digitsOnly.length === 12 && digitsOnly.startsWith('91') && /^[6-9]/.test(digitsOnly.slice(2))) ||
-      (digitsOnly.length === 10 && /^[6-9]/.test(digitsOnly))
-    ) {
-      detectedType = 'PHONE';
-    } else if (digitsOnly.length >= 13 && digitsOnly.length <= 19) {
-      if (typeof PIIDetector !== 'undefined' && PIIDetector.luhnCheck(digitsOnly)) {
-        detectedType = 'CARD';
-      }
-    } else if (/^\d{4,8}$/.test(val)) {
-      const hint = (target.id + ' ' + target.name + ' ' + target.placeholder + ' ' + (target.getAttribute('aria-label') || '')).toLowerCase();
-      if (/otp|code|verify|verification|pin|security/.test(hint)) {
-        detectedType = 'OTP';
-      }
-    }
-
-    if (detectedType) {
-      attachBadge(target, detectedType);
-    } else {
-      removeBadge(target);
-    }
-
-    if (isLiveRadarActive) {
-      clearTimeout(liveRadarDebounceTimer);
-      liveRadarDebounceTimer = setTimeout(triggerInstantLiveSync, 40);
-    }
-  }
-
-  function attachBadge(target, type) {
-    removeBadge(target);
-    target.classList.add('parallax-live-shielded');
-
-    const rect = target.getBoundingClientRect();
-    const badge = document.createElement('div');
-    badge.className = 'parallax-live-badge';
-    badge.innerHTML = `<span>🛡️</span> <span>LIVE SHIELD: ${type}</span>`;
-    badge.style.top = `${window.scrollY + rect.top - 24}px`;
-    badge.style.left = `${window.scrollX + rect.left}px`;
-
-    document.body.appendChild(badge);
-    activeBadges.set(target, badge);
-  }
-
-  function removeBadge(target) {
-    target.classList.remove('parallax-live-shielded');
-    if (activeBadges.has(target)) {
-      const badge = activeBadges.get(target);
-      if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
-      activeBadges.delete(target);
-    }
-  }
-
-  // Real-time Event Listeners
-  document.addEventListener('input', (e) => evaluateFieldPrivacy(e.target), true);
-  document.addEventListener('change', (e) => evaluateFieldPrivacy(e.target), true);
-  window.addEventListener('scroll', () => {
-    for (const [target, badge] of activeBadges.entries()) {
-      const rect = target.getBoundingClientRect();
-      badge.style.top = `${window.scrollY + rect.top - 24}px`;
-      badge.style.left = `${window.scrollX + rect.left}px`;
-    }
-    if (isLiveRadarActive) {
+  // 4. Clean event listeners for live radar without in-page visual badges
+  if (isLiveRadarActive) {
+    window.addEventListener('scroll', () => {
       clearTimeout(liveRadarDebounceTimer);
       liveRadarDebounceTimer = setTimeout(triggerInstantLiveSync, 50);
-    }
-  }, { passive: true });
+    }, { passive: true });
+  }
 
   // 5. Message Router (HUD <-> Host Webpage)
   window.addEventListener('message', (event) => {
@@ -292,17 +184,36 @@
       document.body.style.marginTop = '0px';
     }
 
-    if (event.data.type === 'PARALLAX_EXECUTE_FILL') {
-      const selector = event.data.selector || '#city';
-      const value = event.data.value || 'Bengaluru';
-      const target = document.querySelector(selector);
+    if (event.data.type === 'PARALLAX_EXECUTE_ACTION' || event.data.type === 'PARALLAX_EXECUTE_FILL') {
+      const sel = event.data.selector || '#city';
+      const val = event.data.value;
+      const isClick = event.data.action === 'click';
+
+      let target = null;
+      try {
+        target = document.querySelector(sel);
+      } catch (e) {}
+
+      if (!target && isClick) {
+        const cleanTarget = sel.toLowerCase().replace(/button|link|icon|\[|\]|["']/g, '').trim();
+        const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"], [tabindex], span, div'));
+        target = candidates.find(c => {
+          const text = (c.innerText || c.textContent || c.getAttribute('aria-label') || c.getAttribute('title') || '').trim().toLowerCase();
+          return text === cleanTarget || (cleanTarget.length > 2 && text.includes(cleanTarget));
+        });
+      }
 
       if (target) {
-        target.value = value;
-        target.dispatchEvent(new Event('input', { bubbles: true }));
-        target.dispatchEvent(new Event('change', { bubbles: true }));
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         target.focus();
+
+        if (isClick) {
+          target.click();
+        } else if (val) {
+          target.value = val;
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+        }
 
         target.classList.add('parallax-highlight');
         setTimeout(() => target.classList.remove('parallax-highlight'), 3500);

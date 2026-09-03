@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parallax Browser Vision Agent</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --card-bg: #0d1527;
+      --border: #1e293b;
+      --primary: #00f2fe;
+      --primary-glow: rgba(0, 242, 254, 0.35);
+      --success: #10b981;
+      --danger: #f43f5e;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 360px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand h1 {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--primary);
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .status-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .status-label { color: var(--text-muted); }
+    .status-value { font-weight: 700; color: var(--primary); }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+      color: #04101e;
+      box-shadow: 0 0 12px var(--primary-glow);
+    }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-secondary {
+      background: #1e293b;
+      color: var(--text);
+      border-color: #334155;
+    }
+    .btn-secondary:hover { background: #334155; }
+    .btn-danger {
+      background: rgba(244, 63, 94, 0.15);
+      color: var(--danger);
+      border-color: rgba(244, 63, 94, 0.4);
+    }
+    .btn-danger:hover { background: rgba(244, 63, 94, 0.3); }
+
+    /* Confirmation Modal Card */
+    .confirmation-box {
+      display: none;
+      background: rgba(244, 63, 94, 0.1);
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .confirmation-box.active { display: block; }
+    .confirmation-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--danger);
+      margin-bottom: 6px;
+    }
+    .confirmation-action {
+      font-size: 11.5px;
+      color: #f1f5f9;
+      margin-bottom: 10px;
+      word-break: break-word;
+    }
+    .confirmation-btns {
+      display: flex;
+      gap: 6px;
+    }
+    .confirmation-btns button {
+      flex: 1;
+      padding: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 4px;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-confirm { background: var(--success); color: white; }
+    .btn-reject { background: var(--danger); color: white; }
+
+    .audit-footer {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      text-align: center;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <h1>PARALLAX</h1>
+    </div>
+    <span class="badge">LOCAL MAPPING ACTIVE</span>
+  </div>
+
+  <div class="status-card">
+    <div class="status-row">
+      <span class="status-label">Loop State:</span>
+      <span id="agentState" class="status-value">IDLE</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Next Action:</span>
+      <span id="nextActionText" style="font-family: monospace; color: #f1f5f9;">—</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Confidence:</span>
+      <span id="confidenceText" style="color: var(--success);">—</span>
+    </div>
+  </div>
+
+  <!-- Human Confirmation Card -->
+  <div id="confirmationCard" class="confirmation-box">
+    <div class="confirmation-title">⚠️ USER CONFIRMATION REQUIRED</div>
+    <div id="proposedActionText" class="confirmation-action">Grok proposed clicking a sensitive or high-risk element.</div>
+    <div class="confirmation-btns">
+      <button id="confirmBtn" class="btn-confirm">Approve & Execute</button>
+      <button id="rejectBtn" class="btn-reject">Decline Action</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="startAgentBtn" class="btn btn-primary">▶ Start Guidance Loop</button>
+    <button id="pauseAgentBtn" class="btn btn-secondary" style="display:none;">⏸ Pause Guidance</button>
+    <button id="stopAgentBtn" class="btn btn-danger" style="display:none;">⏹ Stop Agent</button>
+  </div>
+
+  <div class="audit-footer">
+    🛡️ Zero Raw PII Policy • Local Policy Validator Enforced
+  </div>
+
+  <script type="module" src="../dist/popup/popup.js"></script>
+</body>
+</html>

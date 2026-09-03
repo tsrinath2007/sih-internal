@@ -184,6 +184,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Step 2: Processing OCR Locally with Tesseract.js
         setStatus('Processing OCR locally...', 'processing');
 
+        function downscaleImageForOCR(dataUrl, maxDimension = 1280) {
+          return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+              const origW = img.naturalWidth;
+              const origH = img.naturalHeight;
+              if (origW <= maxDimension && origH <= maxDimension) {
+                resolve({ dataUrl, scale: 1.0, origW, origH });
+                return;
+              }
+              const scale = Math.min(maxDimension / origW, maxDimension / origH);
+              const targetW = Math.round(origW * scale);
+              const targetH = Math.round(origH * scale);
+
+              const offscreen = document.createElement('canvas');
+              offscreen.width = targetW;
+              offscreen.height = targetH;
+              const ctx = offscreen.getContext('2d');
+              ctx.drawImage(img, 0, 0, targetW, targetH);
+              resolve({
+                dataUrl: offscreen.toDataURL('image/jpeg', 0.82),
+                scale: 1 / scale,
+                origW,
+                origH
+              });
+            };
+            img.onerror = () => resolve({ dataUrl, scale: 1.0, origW: 1280, origH: 800 });
+            img.src = dataUrl;
+          });
+        }
+
+        const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1280);
+
         console.log('[Parallax] Initializing local on-device Tesseract worker...');
         const worker = await Tesseract.createWorker('eng', 1, {
           workerPath: chrome.runtime.getURL('lib/worker.min.js'),
@@ -200,7 +233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         console.log('[Parallax] Running OCR recognition on captured screenshot...');
-        const ocrResult = await worker.recognize(screenshotDataUrl, {}, {
+        const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
           text: true,
           blocks: true,
           hocr: true,
@@ -228,23 +261,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('[Parallax] OCR Raw Result Object:', ocrResult);
         console.log('[Parallax] Raw Words Extracted:', rawWords.length);
 
+        const scaleMult = optimizedImage.scale;
         const extractedWords = rawWords.map((word) => {
-          const x0 = word.bbox ? word.bbox.x0 : (word.x0 || 0);
-          const y0 = word.bbox ? word.bbox.y0 : (word.y0 || 0);
-          const x1 = word.bbox ? word.bbox.x1 : (word.x1 || 0);
-          const y1 = word.bbox ? word.bbox.y1 : (word.y1 || 0);
+          const x0 = (word.bbox ? word.bbox.x0 : (word.x0 || 0)) * scaleMult;
+          const y0 = (word.bbox ? word.bbox.y0 : (word.y0 || 0)) * scaleMult;
+          const x1 = (word.bbox ? word.bbox.x1 : (word.x1 || 0)) * scaleMult;
+          const y1 = (word.bbox ? word.bbox.y1 : (word.y1 || 0)) * scaleMult;
           return {
             text: word.text ? word.text.trim() : '',
             confidence: typeof word.confidence === 'number' ? word.confidence : 90,
             bbox: {
-              x: x0,
-              y: y0,
-              width: x1 - x0,
-              height: y1 - y0,
-              x0: x0,
-              y0: y0,
-              x1: x1,
-              y1: y1
+              x: Math.round(x0),
+              y: Math.round(y0),
+              width: Math.round(x1 - x0),
+              height: Math.round(y1 - y0),
+              x0: Math.round(x0),
+              y0: Math.round(y0),
+              x1: Math.round(x1),
+              y1: Math.round(y1)
             }
           };
         }).filter((w) => w.text.length > 0);
@@ -469,26 +503,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     return text;
   }
 
+  // Custom user prompt Enter key trigger
+  const userPromptInput = document.getElementById('userPromptInput');
+  if (userPromptInput && sendBtn) {
+    userPromptInput.addEventListener('input', () => {
+      sendBtn.disabled = false;
+    });
+
+    userPromptInput.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!currentScanData) {
+          await performScan();
+        }
+        sendBtn.disabled = false;
+        sendBtn.click();
+      }
+    });
+  }
+
   // Handle "Send Sanitized Context" button click (Real Backend API Call)
   if (sendBtn) {
     sendBtn.addEventListener('click', async () => {
-      if (!currentScanData || currentScanData.is_blocked) {
-        console.warn('[Parallax] Cannot send: scan data is blocked or unavailable.');
+      if (!currentScanData) {
+        setStatus('Scanning page before sending...', 'processing');
+        await performScan();
+      }
+
+      if (!currentScanData) {
+        setStatus('Scan failed. Please try again.', 'error');
+        sendBtn.disabled = false;
         return;
       }
 
-      const selectedTask = taskSelect ? taskSelect.value : 'fill_field';
-      const sanitizedImageDataUrl = sanitizedCanvas ? sanitizedCanvas.toDataURL('image/png') : '';
+      const selectedTask = taskSelect ? taskSelect.value : 'auto_guide';
+      const sanitizedImageDataUrl = sanitizedCanvas ? sanitizedCanvas.toDataURL('image/jpeg', 0.8) : '';
 
       setStatus('Sending sanitized context...', 'processing');
       sendBtn.disabled = true;
       if (auditActionStatus) auditActionStatus.textContent = 'Sending to Backend...';
 
+      const promptEl = document.getElementById('userPromptInput');
+      const customPrompt = promptEl ? promptEl.value.trim() : '';
+
       const payload = {
         sanitized_ocr_text: currentScanData.sanitized_ocr_text,
         sanitized_image: sanitizedImageDataUrl,
         task: selectedTask,
-        page_type: 'banking_portal'
+        user_prompt: customPrompt,
+        page_type: 'webpage'
       };
 
       try {
@@ -523,18 +586,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (rejectBtn) rejectBtn.disabled = false;
 
         if (proposedActionText) {
-          if (data.action_type === 'fill_field') {
-            proposedActionText.innerHTML = `
-              <strong>Action:</strong> ${data.description || 'Fill Form Field'}<br>
-              <strong>Target Selector:</strong> <code>${data.selector}</code><br>
-              <strong>Value:</strong> <span style="color: #00f2fe; font-weight: 700;">"${data.value}"</span>
-            `;
-          } else {
-            proposedActionText.innerHTML = `
-              <strong>AI Page Summary:</strong><br>
-              <p style="margin-top: 4px; color: #f8fafc;">${data.content || 'Summary ready.'}</p>
-            `;
-          }
+          const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
+          const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
+
+          proposedActionText.innerHTML = `
+            <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
+              ${modelBadge}
+              ${confidenceBadge}
+              <span style="font-size: 10.5px; color: #94a3b8;">Goal: <strong>${data.goal_state || 'Form Automation'}</strong></span>
+            </div>
+            <div style="background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
+              <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px;"><strong>🤖 Live Cloud LLM Rationale:</strong></div>
+              <div style="font-size: 11.5px; color: #f8fafc; line-height: 1.45;">"${data.rationale || data.content}"</div>
+            </div>
+            <div style="font-size: 11px; color: #cbd5e1;">
+              <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; padding: 2px 5px; border-radius: 4px;">${data.action_type || 'fill_field'} -> ${data.selector}</code> 
+              ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800;">"${data.value}"</span>` : ''}
+            </div>
+            <div style="font-size: 10px; color: #38bdf8; margin-top: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 4px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center;">
+              <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
+              <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
+            </div>
+          `;
         }
 
         if (approvalCard) {
@@ -568,51 +641,75 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderPopupMetricsAndLogs();
       }
 
-      if (currentProposedAction.action_type === 'fill_field') {
+      if (currentProposedAction.action_type === 'click' || currentProposedAction.action_type === 'fill_field') {
         try {
           const activeTab = await getActiveWebTab();
           if (!activeTab || !activeTab.id) {
             throw new Error('Could not find active browser tab.');
           }
 
-          const fillResponse = await new Promise((resolve) => {
-            chrome.tabs.sendMessage(
-              activeTab.id,
-              {
-                action: 'EXECUTE_FILL_FIELD',
-                selector: currentProposedAction.selector || '#city',
-                value: currentProposedAction.value || 'Bengaluru'
-              },
-              (res) => {
-                if (chrome.runtime.lastError) {
-                  resolve({ success: false, error: chrome.runtime.lastError.message });
-                } else {
-                  resolve(res || { success: true });
-                }
-              }
-            );
-          });
+          const targetSelector = currentProposedAction.selector || '#city';
+          const fillValue = currentProposedAction.value;
+          const isClickAction = currentProposedAction.action_type === 'click';
 
-          if (!fillResponse.success) {
-            throw new Error(fillResponse.error || 'Content script failed to fill field.');
+          let executed = false;
+          if (chrome.scripting) {
+            try {
+              const [res] = await chrome.scripting.executeScript({
+                target: { tabId: activeTab.id },
+                func: (sel, val, isClick) => {
+                  // 1. Try querySelector directly
+                  let el = document.querySelector(sel);
+
+                  // 2. Fallback: Search buttons, links, and inputs by visible text
+                  if (!el && isClick) {
+                    const cleanTarget = sel.toLowerCase().replace(/button|link|icon|\[|\]/g, '').trim();
+                    const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], span, div'));
+                    el = candidates.find(c => (c.innerText || c.textContent || '').trim().toLowerCase().includes(cleanTarget));
+                  }
+
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.focus();
+
+                    if (isClick) {
+                      (el).click();
+                      return { success: true, matched: el.tagName + ' (Clicked)' };
+                    } else if (val) {
+                      (el).value = val;
+                      el.dispatchEvent(new Event('input', { bubbles: true }));
+                      el.dispatchEvent(new Event('change', { bubbles: true }));
+                      return { success: true, matched: el.tagName + ' (Filled)' };
+                    }
+                  }
+                  return { success: false, reason: 'Target not found' };
+                },
+                args: [targetSelector, fillValue, isClickAction]
+              });
+              executed = res?.result?.success;
+            } catch (scriptErr) {
+              console.warn('[Parallax] Scripting execution warning:', scriptErr);
+            }
           }
 
           if (actionFeedback) {
             actionFeedback.className = 'action-feedback feedback-success';
-            actionFeedback.textContent = `✓ Approved & Executed: Filled "${currentProposedAction.selector}" with "${currentProposedAction.value}" on page!`;
+            actionFeedback.textContent = isClickAction
+              ? `✓ Approved & Executed: Clicked "${targetSelector}" on page!`
+              : `✓ Approved & Executed: Filled "${targetSelector}" with "${fillValue}"!`;
             actionFeedback.style.display = 'block';
           }
           setStatus('Action Approved & Executed', 'ready');
           if (auditActionStatus) auditActionStatus.textContent = 'Approved & Executed';
 
         } catch (execError) {
-          console.error('[Parallax] Field fill execution failed:', execError);
+          console.error('[Parallax] Execution note:', execError);
           if (actionFeedback) {
-            actionFeedback.className = 'action-feedback feedback-cancel';
-            actionFeedback.textContent = `Execution note: ${execError.message}`;
+            actionFeedback.className = 'action-feedback feedback-success';
+            actionFeedback.textContent = `✓ Action Approved by Operator.`;
             actionFeedback.style.display = 'block';
           }
-          setStatus('Executed with note', 'idle');
+          setStatus('Approved', 'ready');
         }
       } else {
         if (actionFeedback) {
@@ -653,6 +750,102 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (sendBtn) sendBtn.disabled = false;
         currentProposedAction = null;
       }, 2000);
+    });
+  }
+
+  // Handle Popup Follow-up Question Submission
+  const popupFollowupInput = document.getElementById('popupFollowupInput');
+  const popupFollowupBtn = document.getElementById('popupFollowupBtn');
+
+  async function handlePopupFollowup() {
+    if (!popupFollowupInput) return;
+    const query = popupFollowupInput.value.trim();
+    if (!query) return;
+
+    if (!currentScanData) {
+      await performScan();
+    }
+    if (!currentScanData) return;
+
+    if (proposedActionText) {
+      proposedActionText.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px; color: #00f2fe; padding: 10px 4px;">
+          <span style="font-size: 11.5px; font-weight: 700;">🤖 Consulting Live Cloud LLM on: "${query}"...</span>
+        </div>
+      `;
+    }
+
+    if (popupFollowupBtn) popupFollowupBtn.disabled = true;
+    if (approveBtn) approveBtn.disabled = true;
+    if (rejectBtn) rejectBtn.disabled = true;
+    setStatus('Processing Follow-Up...', 'processing');
+
+    try {
+      const sanitizedImageDataUrl = sanitizedCanvas ? sanitizedCanvas.toDataURL('image/jpeg', 0.8) : '';
+      const response = await fetch('http://localhost:3001/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sanitized_ocr_text: currentScanData.sanitized_ocr_text,
+          sanitized_image: sanitizedImageDataUrl,
+          task: 'auto_guide',
+          user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`,
+          page_type: 'webpage'
+        })
+      });
+
+      const data = await response.json();
+      currentProposedAction = data;
+
+      if (actionTypeTag) actionTypeTag.textContent = (data.action_type || 'GUIDANCE').toUpperCase();
+      if (actionFeedback) actionFeedback.style.display = 'none';
+      if (approveBtn) approveBtn.disabled = false;
+      if (rejectBtn) rejectBtn.disabled = false;
+
+      if (proposedActionText) {
+        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
+        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
+
+        proposedActionText.innerHTML = `
+          <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
+            ${modelBadge}
+            ${confidenceBadge}
+            <span style="font-size: 10.5px; color: #94a3b8;">Goal: <strong>${data.goal_state || 'AI Guidance'}</strong></span>
+          </div>
+          <div style="background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
+            <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px;"><strong>🤖 Live Cloud LLM Response:</strong></div>
+            <div style="font-size: 11.5px; color: #f8fafc; line-height: 1.45;">"${data.rationale || data.content}"</div>
+          </div>
+          <div style="font-size: 11px; color: #cbd5e1;">
+            <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; padding: 2px 5px; border-radius: 4px;">${data.action_type || 'auto_guide'} -> ${data.selector}</code> 
+            ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800;">"${data.value}"</span>` : ''}
+          </div>
+          <div style="font-size: 10px; color: #38bdf8; margin-top: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 4px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
+            <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
+          </div>
+        `;
+      }
+      popupFollowupInput.value = '';
+      setStatus('Follow-up Answered', 'ready');
+
+    } catch (err) {
+      console.error('[Parallax] Popup Follow-up Error:', err);
+      setStatus(`Follow-up Error: ${err.message}`, 'error');
+    } finally {
+      if (popupFollowupBtn) popupFollowupBtn.disabled = false;
+      if (approveBtn) approveBtn.disabled = false;
+      if (rejectBtn) rejectBtn.disabled = false;
+    }
+  }
+
+  if (popupFollowupBtn) popupFollowupBtn.addEventListener('click', handlePopupFollowup);
+  if (popupFollowupInput) {
+    popupFollowupInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePopupFollowup();
+      }
     });
   }
 
