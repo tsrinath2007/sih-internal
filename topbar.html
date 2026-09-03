@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parallax - Visual Perception & Privacy HUD</title>
+  <link rel="stylesheet" href="topbar.css">
+</head>
+<body>
+  <div id="parallax-topbar-root">
+    <!-- Top Control Bar -->
+    <div class="parallax-topbar" id="parallaxMainBar">
+      <!-- Left: Logo & Brand -->
+      <div class="ptb-brand-section">
+        <div class="ptb-logo-wrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <circle cx="12" cy="11" r="3"></circle>
+          </svg>
+        </div>
+        <div class="ptb-title-group">
+          <div class="ptb-title-row">
+            <span class="ptb-title">PARALLAX</span>
+            <span class="ptb-version-tag">HUD v1.0</span>
+          </div>
+          <span class="ptb-badge"><span class="ptb-pulse-ring"></span>100% LOCAL ON-DEVICE OCR</span>
+        </div>
+      </div>
+
+      <!-- Center: Main Actions & Status -->
+      <div class="ptb-controls-section">
+        <button id="ptbScanBtn" class="ptb-btn-primary" title="Capture and run local privacy perception scan">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          <span>Scan Page</span>
+        </button>
+
+        <button id="ptbLiveRadarBtn" class="ptb-btn-radar" title="Toggle Real-Time Automated Perception Radar">
+          <span class="ptb-radar-blip"></span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 7v5l3 3"></path>
+          </svg>
+          <span id="ptbLiveRadarText">Live Radar: OFF</span>
+        </button>
+
+        <div class="ptb-select-wrap">
+          <select id="ptbTaskSelect" class="ptb-select" title="Target Agent Action">
+            <option value="fill_field">⚡ Action: Fill City Field</option>
+            <option value="summarize">📋 Action: Summarize Page</option>
+          </select>
+          <span class="ptb-select-arrow">▼</span>
+        </div>
+
+        <button id="ptbSendBtn" class="ptb-btn-send" disabled title="Send sanitized context to backend">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+          <span>Send Sanitized</span>
+        </button>
+
+        <div class="ptb-status-pill">
+          <span class="ptb-status-indicator"></span>
+          <span>Status:</span>
+          <span id="ptbStatusText" class="ptb-status-idle">Idle</span>
+        </div>
+      </div>
+
+      <!-- Right: Drawer Toggle & Close -->
+      <div class="ptb-right-section">
+        <button id="ptbToggleDrawerBtn" class="ptb-btn-drawer" title="Toggle side-by-side inspection drawer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <span id="ptbDrawerBtnText">Showcase (0) ▼</span>
+        </button>
+
+        <button id="ptbCloseBtn" class="ptb-close-btn" title="Hide Top Control Bar">✕</button>
+      </div>
+    </div>
+
+    <!-- Expanded Showcase Drawer (Covers Lower Space On Scan) -->
+    <div class="ptb-drawer" id="ptbDrawer">
+      <!-- Showcase Header Bar -->
+      <div class="ptb-showcase-header">
+        <div class="ptb-showcase-title-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" stroke-width="2.2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <span class="ptb-showcase-title">ON-DEVICE PRIVACY SHOWCASE & METRICS AUDIT</span>
+        </div>
+        <span class="ptb-showcase-count" id="ptbShowcaseCount">0 SENSITIVE REGIONS PROTECTED</span>
+      </div>
+
+      <!-- Metrics Summary Mini-Panel (Pitch Deck Cards) -->
+      <div class="ptb-metrics-panel" id="ptbMetricsPanel">
+        <div class="ptb-metric-card">
+          <span class="ptb-metric-val" id="metricTotalScans">0</span>
+          <span class="ptb-metric-lbl">TOTAL SCANS</span>
+        </div>
+        <div class="ptb-metric-card">
+          <span class="ptb-metric-val" id="metricTotalPII">0</span>
+          <span class="ptb-metric-lbl">PII PROTECTED</span>
+        </div>
+        <div class="ptb-metric-card">
+          <span class="ptb-metric-val metric-blocked" id="metricTotalBlocked">0</span>
+          <span class="ptb-metric-lbl">BLOCKED HANDOFFS</span>
+        </div>
+        <div class="ptb-metric-card">
+          <span class="ptb-metric-val metric-approved" id="metricTotalApproved">0</span>
+          <span class="ptb-metric-lbl">ACTIONS APPROVED</span>
+        </div>
+      </div>
+
+      <!-- Human Action Approval Card -->
+      <div class="ptb-approval-card" id="ptbApprovalCard">
+        <div class="ptb-approval-header">
+          <div class="ptb-approval-badge">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <polyline points="9 12 11 14 15 10"></polyline>
+            </svg>
+            <span>HUMAN-IN-THE-LOOP SAFE ACTION APPROVAL</span>
+          </div>
+          <span id="ptbActionTag" class="ptb-action-tag">ACTION</span>
+        </div>
+        <div class="ptb-approval-content" id="ptbProposedText"></div>
+        <div class="ptb-approval-actions">
+          <button id="ptbApproveBtn" class="ptb-btn-approve">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Approve & Execute</span>
+          </button>
+          <button id="ptbRejectBtn" class="ptb-btn-reject">Decline Action</button>
+          <span id="ptbActionFeedback" style="font-size: 11.5px; margin-left: 10px; font-weight: 700; display: none;"></span>
+        </div>
+      </div>
+
+      <!-- Side-by-Side Previews Showcase -->
+      <div class="ptb-previews-row">
+        <!-- Original Canvas -->
+        <div class="ptb-preview-card">
+          <div class="ptb-preview-header">
+            <div class="ptb-preview-tag">
+              <span class="ptb-tag-dot dot-orig"></span>
+              <span>Original (OCR Text Bounding Boxes)</span>
+            </div>
+            <div class="ptb-preview-header-right">
+              <span id="ptbWordCount" class="ptb-canvas-meta meta-orig">0 words</span>
+              <button class="ptb-fullscreen-btn" id="ptbFullscreenOrigBtn" title="View Original in Full Screen">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
+                <span>Full Screen</span>
+              </button>
+            </div>
+          </div>
+          <div class="ptb-canvas-box" id="ptbOrigWrapper">
+            <canvas id="ptbOriginalCanvas"></canvas>
+            <div class="ptb-empty">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+              <span>Click "Scan Current Page" to run perception scan</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sanitized Canvas -->
+        <div class="ptb-preview-card">
+          <div class="ptb-preview-header">
+            <div class="ptb-preview-tag">
+              <span class="ptb-tag-dot dot-san"></span>
+              <span>Sanitized (PII Redacted with Blackouts)</span>
+            </div>
+            <div class="ptb-preview-header-right">
+              <span id="ptbRedactCount" class="ptb-canvas-meta meta-san">0 Redacted</span>
+              <button class="ptb-fullscreen-btn" id="ptbFullscreenSanBtn" title="View Sanitized in Full Screen">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
+                <span>Full Screen</span>
+              </button>
+            </div>
+          </div>
+          <div class="ptb-canvas-box" id="ptbSanWrapper">
+            <canvas id="ptbSanitizedCanvas"></canvas>
+            <div class="ptb-empty">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              <span>Sanitized blackout output will appear here</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detected PII Chips List -->
+      <div class="ptb-pii-list" id="ptbChipsList"></div>
+
+      <!-- Local-Only IndexedDB Detection Audit Log -->
+      <div class="ptb-log-section">
+        <div class="ptb-log-header">
+          <div class="ptb-log-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            <span>LOCAL DETECTION AUDIT LOG (INDEXEDDB • METADATA ONLY)</span>
+          </div>
+          <div class="ptb-log-actions">
+            <button id="ptbRefreshLogBtn" class="ptb-log-btn" title="Refresh local detection history">⟳ Refresh Log</button>
+            <button id="ptbClearLogBtn" class="ptb-log-btn log-btn-clear" title="Clear all local detection records">🗑️ Clear Log</button>
+          </div>
+        </div>
+        <div class="ptb-log-table-wrap">
+          <table class="ptb-log-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>TIMESTAMP</th>
+                <th>PAGE URL</th>
+                <th>TYPES DETECTED</th>
+                <th>STATUS</th>
+                <th>ACTION OUTCOME</th>
+              </tr>
+            </thead>
+            <tbody id="ptbLogTableBody">
+              <tr><td colspan="6" class="ptb-log-empty">No detection logs recorded yet. Scan a page to generate local audit records.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- High-Resolution Fullscreen Modal Viewer -->
+  <div class="ptb-fs-modal" id="ptbFsModal">
+    <div class="ptb-fs-backdrop" id="ptbFsBackdrop"></div>
+    <div class="ptb-fs-dialog">
+      <div class="ptb-fs-header">
+        <div class="ptb-fs-title-group">
+          <span class="ptb-fs-badge" id="ptbFsModeBadge">ORIGINAL VIEW</span>
+          <span class="ptb-fs-meta" id="ptbFsMetaText">High-Resolution Visual Perception Inspector</span>
+        </div>
+
+        <div class="ptb-fs-toggle-wrap">
+          <button class="ptb-fs-tab active" id="ptbFsTabOrig">Original (BBoxes)</button>
+          <button class="ptb-fs-tab" id="ptbFsTabSan">Sanitized (Blackouts)</button>
+        </div>
+
+        <div class="ptb-fs-actions">
+          <button class="ptb-fs-tool-btn" id="ptbFsZoomOutBtn" title="Zoom Out (−)">−</button>
+          <span class="ptb-fs-zoom-level" id="ptbFsZoomLevel">100%</span>
+          <button class="ptb-fs-tool-btn" id="ptbFsZoomInBtn" title="Zoom In (+)">+</button>
+          <button class="ptb-fs-tool-btn" id="ptbFsZoomResetBtn" title="Fit to Screen">Fit</button>
+          <button class="ptb-fs-close-btn" id="ptbFsCloseBtn" title="Close Fullscreen (Esc)">✕</button>
+        </div>
+      </div>
+
+      <div class="ptb-fs-body" id="ptbFsBody">
+        <div class="ptb-fs-canvas-container" id="ptbFsCanvasContainer">
+          <canvas id="ptbFsCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="lib/tesseract.min.js"></script>
+  <script src="pii-detector.js"></script>
+  <script src="db.js"></script>
+  <script src="topbar.js"></script>
+</body>
+</html>

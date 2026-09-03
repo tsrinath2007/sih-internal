@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Account Portal - Parallax Normal Test</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --primary: #0284c7;
+      --accent: #0d9488;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 760px;
+      width: 100%;
+      background: var(--card-bg);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+      overflow: hidden;
+    }
+
+    .header {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 24px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .tag {
+      background: #14b8a6;
+      color: #0f172a;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+    }
+
+    .content {
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .field-card {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .field-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .field-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: #000000;
+      letter-spacing: 0.2px;
+    }
+
+    .field-input {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #0f172a;
+      background: #ffffff;
+      border: 2px solid #94a3b8;
+      border-radius: 6px;
+      outline: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .field-input:focus {
+      border-color: #0284c7;
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
+    }
+
+    /* Parallax agent action highlight */
+    .field-input.parallax-highlight {
+      background-color: #ecfeff !important;
+      border-color: #06b6d4 !important;
+      box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.35), 0 0 16px rgba(6, 182, 212, 0.4) !important;
+      animation: pulseField 1.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulseField {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.02); }
+    }
+
+    .full-width {
+      grid-column: span 2;
+    }
+
+    .card-highlight {
+      background: #e0f2fe;
+      border-color: #7dd3fc;
+    }
+
+    .otp-banner {
+      background: #fef3c7;
+      border: 1px solid #fde047;
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .otp-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: #78350f;
+    }
+
+    .otp-code {
+      font-size: 20px;
+      font-weight: 800;
+      color: #92400e;
+      letter-spacing: 2px;
+      background: #ffffff;
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px dashed #f59e0b;
+    }
+
+    .footer {
+      background: #f8fafc;
+      padding: 16px 32px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand-title">Apex Financial Services</div>
+      <div class="tag">High Confidence Test</div>
+    </div>
+
+    <div class="content">
+      <div class="section-title">Personal Profile Details</div>
+      
+      <div class="grid">
+        <div class="field-card">
+          <span class="field-label">Account Holder Name</span>
+          <div class="field-value">Alex Vance</div>
+        </div>
+
+        <div class="field-card">
+          <span class="field-label">Account ID</span>
+          <div class="field-value">APX-892011</div>
+        </div>
+
+        <div class="field-card">
+          <span class="field-label">Email Address</span>
+          <div class="field-value">alex.vance@examplecorp.com</div>
+        </div>
+
+        <div class="field-card">
+          <span class="field-label">Mobile Phone Number</span>
+          <div class="field-value">+91 98765 43210</div>
+        </div>
+
+        <div class="field-card full-width card-highlight">
+          <span class="field-label">Primary Payment Card (Luhn Valid)</span>
+          <div class="field-value">4532 0150 1234 5671</div>
+        </div>
+
+        <div class="field-card full-width">
+          <span class="field-label">Current City Location (Target Input Field)</span>
+          <input type="text" id="city" class="field-input" placeholder="Enter city (or let Parallax fill)..." />
+        </div>
+      </div>
+
+      <div class="otp-banner">
+        <div class="otp-text">Your verification security code is:</div>
+        <div class="otp-code">482917</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Confidential customer banking snapshot • Parallax On-Device OCR & PII Benchmark
+    </div>
+  </div>
+</body>
+</html>

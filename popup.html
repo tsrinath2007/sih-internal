@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parallax - Privacy-Preserving Perception Sidebar</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-row">
+        <div class="logo-badge">
+          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <line x1="4.93" y1="4.93" x2="9.17" y2="9.17"></line>
+            <line x1="14.83" y1="14.83" x2="19.07" y2="19.07"></line>
+            <line x1="14.83" y1="9.17" x2="19.07" y2="4.93"></line>
+            <line x1="4.93" y1="19.07" x2="9.17" y2="14.83"></line>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">PARALLAX</h1>
+          <span class="brand-subtitle">On-Device Privacy & Perception Sidebar</span>
+        </div>
+      </div>
+
+      <div class="header-right-actions">
+        <button id="toggleTopBarBtn" class="detach-btn" title="Toggle On-Screen Top Bar HUD">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="5" rx="1"></rect>
+            <rect x="3" y="11" width="18" height="10" rx="1"></rect>
+          </svg>
+          <span>Top Bar HUD</span>
+        </button>
+
+        <div class="privacy-badge">
+          <span class="pulse-dot"></span>
+          <span>100% LOCAL OCR</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Controls & Status -->
+    <section class="controls-section">
+      <div class="action-buttons-row">
+        <button id="scanBtn" class="primary-btn">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="3" y1="9" x2="21" y2="9"></line>
+            <line x1="9" y1="21" x2="9" y2="9"></line>
+          </svg>
+          <span>Scan Current Page</span>
+        </button>
+
+        <div class="task-selector-wrap">
+          <select id="taskSelect" class="task-dropdown" title="Select Backend Agent Action">
+            <option value="fill_field">Action: Fill City Field</option>
+            <option value="summarize">Action: Summarize Page</option>
+          </select>
+        </div>
+
+        <button id="sendBtn" class="send-btn" disabled>
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+          <span>Send Sanitized Context</span>
+        </button>
+      </div>
+
+      <div class="status-card">
+        <span class="status-label">Status:</span>
+        <span id="statusText" class="status-value status-idle">Idle</span>
+      </div>
+    </section>
+
+    <!-- Metrics Summary Mini-Panel -->
+    <section class="metrics-summary-section">
+      <div class="stat-card">
+        <span class="stat-num" id="popStatTotalScans">0</span>
+        <span class="stat-label">TOTAL SCANS</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num" id="popStatTotalPII">0</span>
+        <span class="stat-label">PII PROTECTED</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num stat-blocked" id="popStatBlocked">0</span>
+        <span class="stat-label">BLOCKED</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num stat-approved" id="popStatApproved">0</span>
+        <span class="stat-label">APPROVED</span>
+      </div>
+    </section>
+
+    <!-- Previews (Side-by-Side in wider panels, stacked on narrow sidebars) -->
+    <section class="previews-section">
+      <!-- Original Panel -->
+      <div class="preview-card">
+        <div class="preview-header">
+          <div class="preview-title-wrap">
+            <span class="panel-indicator original-indicator"></span>
+            <span class="preview-title">Original (OCR Text Boxes)</span>
+          </div>
+          <div class="preview-header-right">
+            <span id="wordCountBadge" class="word-badge" style="display: none;">0 words</span>
+            <button class="pop-fs-btn" id="popFsOrigBtn" title="View Original in Full Screen">⛶ Fullscreen</button>
+          </div>
+        </div>
+        <div class="canvas-wrapper" id="originalWrapper">
+          <canvas id="originalCanvas"></canvas>
+          <div id="originalEmptyState" class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <p>Click "Scan Current Page" to capture viewport</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sanitized Panel -->
+      <div class="preview-card">
+        <div class="preview-header">
+          <div class="preview-title-wrap">
+            <span class="panel-indicator sanitized-indicator"></span>
+            <span class="preview-title">Sanitized (PII Redacted)</span>
+          </div>
+          <div class="preview-header-right">
+            <span id="redactedCountBadge" class="redacted-badge" style="display: none;">0 Redacted</span>
+            <button class="pop-fs-btn" id="popFsSanBtn" title="View Sanitized in Full Screen">⛶ Fullscreen</button>
+          </div>
+        </div>
+        <div class="canvas-wrapper" id="sanitizedWrapper">
+          <canvas id="sanitizedCanvas"></canvas>
+          <div id="sanitizedEmptyState" class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <p>Sanitized output with blackouts will appear here</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results Area (PII Breakdown & Gate Status) -->
+    <div id="results" class="results-container"></div>
+
+    <!-- Human-in-the-Loop Safe Approval Card (Dynamic) -->
+    <div id="approvalCard" class="approval-card" style="display: none;">
+      <div class="approval-header">
+        <div class="approval-badge-wrap">
+          <span class="approval-pulse"></span>
+          <span class="approval-title">Human-in-the-Loop Action Approval</span>
+        </div>
+        <span id="actionTypeTag" class="action-tag">ACTION</span>
+      </div>
+
+      <div class="approval-body">
+        <div class="proposed-action-label">Proposed Backend Agent Action:</div>
+        <div id="proposedActionText" class="proposed-action-content"></div>
+      </div>
+
+      <div class="approval-actions">
+        <button id="approveBtn" class="approve-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Approve Action</span>
+        </button>
+
+        <button id="rejectBtn" class="reject-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+          <span>Reject</span>
+        </button>
+      </div>
+
+      <div id="actionFeedback" class="action-feedback" style="display: none;"></div>
+    </div>
+
+    <!-- Collapsible Local-Only IndexedDB Detection Audit Log -->
+    <section class="detection-log-section">
+      <details class="log-details">
+        <summary class="log-summary">
+          <div class="summary-left">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>View Local Detection Log (IndexedDB)</span>
+          </div>
+          <span class="toggle-arrow">▾</span>
+        </summary>
+        <div class="log-content">
+          <div class="log-toolbar">
+            <button id="popRefreshLogBtn" class="log-btn">⟳ Refresh Log</button>
+            <button id="popClearLogBtn" class="log-btn log-btn-danger">🗑️ Clear Log</button>
+          </div>
+          <div class="log-table-container">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>TIMESTAMP</th>
+                  <th>PAGE URL</th>
+                  <th>TYPES</th>
+                  <th>STATUS</th>
+                  <th>ACTION</th>
+                </tr>
+              </thead>
+              <tbody id="popLogTableBody">
+                <tr><td colspan="6" style="text-align:center; color:#64748b; padding:14px;">No detection logs recorded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- Privacy Audit / Debug Panel -->
+    <section class="audit-section">
+      <details class="audit-details">
+        <summary class="audit-summary">
+          <div class="summary-left">
+            <svg class="shield-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <span>Live Privacy Audit & Data Flow Verifier</span>
+          </div>
+          <span class="toggle-arrow">▾</span>
+        </summary>
+        <div class="audit-content">
+          <div class="audit-grid">
+            <div class="audit-item">
+              <span class="audit-key">Raw Screenshot Transmitted:</span>
+              <span class="audit-val audit-safe">NO (0 bytes)</span>
+            </div>
+            <div class="audit-item">
+              <span class="audit-key">Raw OCR Text Transmitted:</span>
+              <span class="audit-val audit-safe">NO (0 bytes)</span>
+            </div>
+            <div class="audit-item">
+              <span class="audit-key">Detected PII Regions:</span>
+              <span id="auditDetectedCount" class="audit-val">0</span>
+            </div>
+            <div class="audit-item">
+              <span class="audit-key">Redacted Regions:</span>
+              <span id="auditRedactedCount" class="audit-val">0</span>
+            </div>
+            <div class="audit-item">
+              <span class="audit-key">Backend Handoff:</span>
+              <span class="audit-val audit-safe">Sanitized only</span>
+            </div>
+            <div class="audit-item">
+              <span class="audit-key">Action Status:</span>
+              <span id="auditActionStatus" class="audit-val">Idle</span>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <!-- High-Resolution Lightbox Viewer for Popup Mode -->
+  <div class="pop-fs-modal" id="popFsModal">
+    <div class="pop-fs-backdrop" id="popFsBackdrop"></div>
+    <div class="pop-fs-dialog">
+      <div class="pop-fs-header">
+        <div class="pop-fs-title-group">
+          <span class="pop-fs-badge" id="popFsModeBadge">ORIGINAL VIEW</span>
+          <span class="pop-fs-meta" id="popFsMetaText">High-Resolution Perception Inspector</span>
+        </div>
+
+        <div class="pop-fs-toggle-wrap">
+          <button class="pop-fs-tab active" id="popFsTabOrig">Original (BBoxes)</button>
+          <button class="pop-fs-tab" id="popFsTabSan">Sanitized (Blackouts)</button>
+        </div>
+
+        <div class="pop-fs-actions">
+          <button class="pop-fs-tool-btn" id="popFsZoomOutBtn" title="Zoom Out (−)">−</button>
+          <span class="pop-fs-zoom-level" id="popFsZoomLevel">100%</span>
+          <button class="pop-fs-tool-btn" id="popFsZoomInBtn" title="Zoom In (+)">+</button>
+          <button class="pop-fs-tool-btn" id="popFsZoomResetBtn" title="Fit to Screen">Fit</button>
+          <button class="pop-fs-close-btn" id="popFsCloseBtn" title="Close Fullscreen (Esc)">✕</button>
+        </div>
+      </div>
+
+      <div class="pop-fs-body" id="popFsBody">
+        <div class="pop-fs-canvas-container" id="popFsCanvasContainer">
+          <canvas id="popFsCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="lib/tesseract.min.js"></script>
+  <script src="pii-detector.js"></script>
+  <script src="db.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
