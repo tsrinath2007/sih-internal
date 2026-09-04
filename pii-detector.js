@@ -400,34 +400,28 @@
               (digits.length === 16 && /^[2-6]/.test(digits) && /^(\d{4}[\s\-]?){4}$/.test(cleanText.replace(/[^0-9\s\-]/g, ''))) ||
               // 3. Standard 15-Digit Amex (34/37)
               (digits.length === 15 && /^3[47]/.test(digits) && /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText.replace(/[^0-9\s\-]/g, ''))) ||
-              // 4. Formatted 4-Block Noisy Embossed Card (e.g. S476 7E78 9875 5432)
+              // 4. Formatted 4-Block Embossed Card (e.g. 5476 7678 9876 5432, S476 7E78 9875 5432, SH7h PERE 9676 5432)
               (
                 rawSlice.length === 4 &&
-                digits.length >= 10 &&
                 cleanNone.length >= 14 && cleanNone.length <= 18 &&
-                (digits.length / cleanNone.length) >= 0.65 &&
-                (repairedDigits.length === 15 || repairedDigits.length === 16) &&
-                /^[2-6]/.test(repairedDigits) &&
+                digits.length >= 8 &&
                 rawSlice.every(w => {
                   const wt = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
-                  const wd = wt.replace(/\D/g, '');
-                  return wt.length >= 3 && wt.length <= 5 && wd.length >= 2;
+                  return wt.length >= 3 && wt.length <= 5;
                 }) &&
+                rawSlice.filter(w => unwrapUnicodeSmallText(w.text).replace(/\D/g, '').length >= 2).length >= 2 &&
                 computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
               ) ||
-              // 5. 3-Block Noisy Embossed Card (e.g. S476 7789875 5432, 547k 7h78,987k 5432)
+              // 5. 3-Block Embossed Card (e.g. S476 7789875 5432, 547k 7h78,987k 5432)
               (
                 rawSlice.length === 3 &&
-                digits.length >= 10 &&
                 cleanNone.length >= 14 && cleanNone.length <= 18 &&
-                (digits.length / cleanNone.length) >= 0.65 &&
-                (repairedDigits.length === 15 || repairedDigits.length === 16) &&
-                /^[2-6]/.test(repairedDigits) &&
+                digits.length >= 8 &&
                 rawSlice.every(w => {
                   const wt = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
-                  const wd = wt.replace(/\D/g, '');
-                  return wt.length >= 3 && wt.length <= 10 && wd.length >= 2;
+                  return wt.length >= 3 && wt.length <= 10;
                 }) &&
+                rawSlice.filter(w => unwrapUnicodeSmallText(w.text).replace(/\D/g, '').length >= 2).length >= 2 &&
                 computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
               ) ||
               // 6. Standard Card Format regex with pure digits

@@ -418,6 +418,35 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(match.bbox.x).toBe(147);
     expect(match.bbox.width).toBe(165);
   });
+
+  it('detects 16-digit card when embossed digits have heavy OCR degradation (SH7h PERE 9676 5432)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const degradedWords = [
+      { text: 'Input', confidence: 95, bbox: { x: 278, y: 56, width: 44, height: 17 } },
+      { text: 'Dpocoucd', confidence: 0, bbox: { x: 100, y: 97, width: 207, height: 55 } },
+      { text: 'wil', confidence: 48, bbox: { x: 401, y: 99, width: 97, height: 58 } },
+      { text: 'D))]', confidence: 56, bbox: { x: 469, y: 177, width: 29, height: 35 } },
+      { text: 'SH7h', confidence: 0, bbox: { x: 127, y: 232, width: 69, height: 41 } },
+      { text: 'PERE', confidence: 4, bbox: { x: 218, y: 232, width: 68, height: 23 } },
+      { text: '9676', confidence: 4, bbox: { x: 308, y: 232, width: 69, height: 23 } },
+      { text: '5432', confidence: 64, bbox: { x: 401, y: 232, width: 68, height: 23 } },
+      { text: '=a]', confidence: 31, bbox: { x: 115, y: 285, width: 73, height: 36 } },
+      { text: 'i', confidence: 30, bbox: { x: 206, y: 293, width: 17, height: 28 } },
+      { text: 'R', confidence: 51, bbox: { x: 243, y: 285, width: 24, height: 32 } },
+      { text: '01778', confidence: 68, bbox: { x: 290, y: 284, width: 51, height: 14 } }
+    ];
+
+    const result = PIIDetector.detectPII(degradedWords);
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBe(1);
+
+    const match = cardMatches[0];
+    expect(match.matchedText).toBe('SH7h PERE 9676 5432');
+    expect(match.bbox.x).toBe(127);
+    expect(match.bbox.width).toBe(342);
+  });
 });
 
 
