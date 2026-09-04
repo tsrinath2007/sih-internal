@@ -66,7 +66,13 @@
 
       <!-- Custom AI Prompt Input -->
       <div style="margin: 10px 0 6px 0;">
-        <input type="text" id="userPromptInput" placeholder="💬 Ask AI anything or give instructions (e.g. 'Fill my roll number')..." style="width: 100%; box-sizing: border-box; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1.5px solid #334155; padding: 9px 12px; border-radius: 9px; font-size: 12px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#00f2fe'" onblur="this.style.borderColor='#334155'" />
+        <input type="text" id="userPromptInput" placeholder="💬 E.g. 'Fill form' or 'Summarize'..." style="width: 100%; box-sizing: border-box; background: rgba(15, 23, 42, 0.95); color: #f8fafc; border: 1.5px solid #334155; padding: 9px 12px; border-radius: 9px; font-size: 12px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#00f2fe'" onblur="this.style.borderColor='#334155'" />
+        <div id="popupPromptHelper" style="font-size: 10.5px; color: #64748b; margin-top: 4px; padding-left: 2px;">
+          Available actions: <strong style="color: #94a3b8;">Summarize Page</strong>, <strong style="color: #94a3b8;">Fill Form Field</strong>
+        </div>
+        <div id="popupPromptError" style="display: none; font-size: 11px; color: #fb7185; background: rgba(251, 113, 133, 0.1); border: 1px solid rgba(251, 113, 133, 0.3); border-radius: 6px; padding: 6px 9px; margin-top: 5px;">
+          ⚠️ This action isn't supported in the current build. Supported: Summarize Page, Fill Form Field.
+        </div>
       </div>
 
       <div class="action-buttons-row" style="margin-top: 4px;">

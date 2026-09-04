@@ -38,7 +38,8 @@
           <span>Scan Page</span>
         </button>
 
-        <button id="ptbLiveRadarBtn" class="ptb-btn-radar" title="Toggle Real-Time Automated Perception Radar">
+        <!-- Hidden from main HUD for clean internal round demo -->
+        <button id="ptbLiveRadarBtn" class="ptb-btn-radar" title="Toggle Real-Time Automated Perception Radar" style="display: none;">
           <span class="ptb-radar-blip"></span>
           <span id="ptbLiveRadarText">Radar: OFF</span>
         </button>
@@ -53,7 +54,9 @@
         </div>
 
         <div class="ptb-prompt-wrap">
-          <input type="text" id="ptbUserPrompt" class="ptb-prompt-input" placeholder="💬 Ask AI or instruct..." />
+          <input type="text" id="ptbUserPrompt" class="ptb-prompt-input" placeholder="💬 E.g. 'Fill form' or 'Summarize'..." />
+          <div class="ptb-prompt-helper" id="ptbPromptHelper">Allowed: <strong>Summarize Page</strong> • <strong>Fill Form Field</strong></div>
+          <div class="ptb-prompt-error" id="ptbPromptError" style="display: none;">⚠️ This action isn't supported in the current build. Supported: Summarize Page, Fill Form Field.</div>
         </div>
 
         <button id="ptbSendBtn" class="ptb-btn-send" title="Send sanitized context to backend">
@@ -62,6 +65,12 @@
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
           </svg>
           <span>Send Sanitized</span>
+        </button>
+
+        <!-- Presenter Mode Toggle Button -->
+        <button id="ptbPresenterModeBtn" class="ptb-btn-presenter active" title="Toggle Presenter Mode (Clean Demo vs Metrics receipts)">
+          <span class="ptb-presenter-dot"></span>
+          <span id="ptbPresenterText">Presenter Mode: ON</span>
         </button>
 
         <div class="ptb-status-pill">
@@ -94,9 +103,14 @@
             <line x1="8" y1="21" x2="16" y2="21"></line>
             <line x1="12" y1="17" x2="12" y2="21"></line>
           </svg>
-          <span class="ptb-showcase-title">ON-DEVICE PRIVACY SHOWCASE & METRICS AUDIT</span>
+          <span class="ptb-showcase-title">ON-DEVICE PRIVACY SHOWCASE</span>
         </div>
-        <span class="ptb-showcase-count" id="ptbShowcaseCount">0 SENSITIVE REGIONS PROTECTED</span>
+        <div class="ptb-showcase-controls-wrap">
+          <button id="ptbToggleReceiptsBtn" class="ptb-btn-receipts" title="Toggle Audit Log & Metrics (Receipts Reveal)">
+            📊 Reveal Metrics & Receipts ▼
+          </button>
+          <span class="ptb-showcase-count" id="ptbShowcaseCount">0 SENSITIVE REGIONS PROTECTED</span>
+        </div>
       </div>
 
       <!-- Metrics Summary Mini-Panel (Pitch Deck Cards) -->

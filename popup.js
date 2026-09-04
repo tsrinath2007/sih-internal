@@ -146,325 +146,369 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Define performScan function (usable by Scan button, Send button, or prompt Enter)
+  async function performScan() {
+    if (isScanning) return;
+    isScanning = true;
+    if (scanBtn) scanBtn.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+    if (resultsDiv) resultsDiv.innerHTML = '';
+    if (approvalCard) approvalCard.style.display = 'none';
+    if (wordCountBadge) wordCountBadge.style.display = 'none';
+    if (redactedCountBadge) redactedCountBadge.style.display = 'none';
+    if (auditActionStatus) auditActionStatus.textContent = 'Scanning...';
+
+    try {
+      // Step 1: Capture Active Webpage Tab Viewport
+      setStatus('Capturing...', 'capturing');
+
+      const activeTab = await getActiveWebTab();
+
+      // 1. Request DOM words in parallel
+      const domWordsPromise = (async () => {
+        if (!activeTab || !activeTab.id) return { words: [], viewportWidth: 1280, viewportHeight: 800 };
+        return new Promise((resolve) => {
+          const timer = setTimeout(() => resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 }), 200);
+          chrome.tabs.sendMessage(activeTab.id, { action: 'GET_DOM_WORDS' }, (res) => {
+            clearTimeout(timer);
+            if (chrome.runtime.lastError || !res) {
+              resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 });
+            } else {
+              resolve(res);
+            }
+          });
+        });
+      })();
+
+      const captureResponse = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'SCAN_REQUEST' }, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(response || { success: false, error: 'No response from background service worker.' });
+          }
+        });
+      });
+
+      if (!captureResponse.success || !captureResponse.dataUrl) {
+        throw new Error(captureResponse.error || 'Viewport capture failed.');
+      }
+
+      const screenshotDataUrl = captureResponse.dataUrl;
+
+      // Step 2: Processing OCR Locally with Tesseract.js
+      setStatus('Processing OCR locally...', 'processing');
+
+      function downscaleImageForOCR(dataUrl, maxDimension = 1600) {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const origW = img.naturalWidth;
+            const origH = img.naturalHeight;
+            if (origW <= maxDimension && origH <= maxDimension) {
+              resolve({ dataUrl, scale: 1.0, origW, origH });
+              return;
+            }
+            const scale = Math.min(maxDimension / origW, maxDimension / origH);
+            const targetW = Math.round(origW * scale);
+            const targetH = Math.round(origH * scale);
+
+            const offscreen = document.createElement('canvas');
+            offscreen.width = targetW;
+            offscreen.height = targetH;
+            const ctx = offscreen.getContext('2d');
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+            resolve({
+              dataUrl: offscreen.toDataURL('image/jpeg', 0.85),
+              scale: 1 / scale,
+              origW,
+              origH
+            });
+          };
+          img.onerror = () => resolve({ dataUrl, scale: 1.0, origW: 1280, origH: 800 });
+          img.src = dataUrl;
+        });
+      }
+
+      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
+
+      console.log('[Parallax] Initializing local on-device Tesseract worker...');
+      const worker = await Tesseract.createWorker('eng', 1, {
+        workerPath: chrome.runtime.getURL('lib/worker.min.js'),
+        corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js'),
+        langPath: chrome.runtime.getURL('lib/lang-data'),
+        workerBlobURL: false,
+        gzip: true,
+        logger: (m) => {
+          if (m.status === 'recognizing text' && m.progress != null) {
+            const pct = Math.round(m.progress * 100);
+            setStatus(`Processing OCR locally... (${pct}%)`, 'processing');
+          }
+        }
+      });
+
+      console.log('[Parallax] Running OCR recognition on captured screenshot...');
+      const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
+        text: true,
+        blocks: true,
+        hocr: true,
+        tsv: true
+      });
+
+      await worker.terminate();
+
+      // Step 3: Extract Word-Level Information
+      let rawWords = [];
+      if (ocrResult.data && Array.isArray(ocrResult.data.words) && ocrResult.data.words.length > 0) {
+        rawWords = ocrResult.data.words;
+      } else if (ocrResult.data && Array.isArray(ocrResult.data.blocks)) {
+        for (const block of ocrResult.data.blocks) {
+          for (const paragraph of (block.paragraphs || [])) {
+            for (const line of (paragraph.lines || [])) {
+              for (const word of (line.words || [])) {
+                rawWords.push(word);
+              }
+            }
+          }
+        }
+      }
+
+      const scaleMult = optimizedImage.scale;
+      const extractedWords = rawWords.map((word) => {
+        const x0 = (word.bbox ? word.bbox.x0 : (word.x0 || 0)) * scaleMult;
+        const y0 = (word.bbox ? word.bbox.y0 : (word.y0 || 0)) * scaleMult;
+        const x1 = (word.bbox ? word.bbox.x1 : (word.x1 || 0)) * scaleMult;
+        const y1 = (word.bbox ? word.bbox.y1 : (word.y1 || 0)) * scaleMult;
+        return {
+          text: word.text ? word.text.trim() : '',
+          confidence: typeof word.confidence === 'number' ? word.confidence : 90,
+          bbox: {
+            x: Math.round(x0),
+            y: Math.round(y0),
+            width: Math.round(x1 - x0),
+            height: Math.round(y1 - y0),
+            x0: Math.round(x0),
+            y0: Math.round(y0),
+            x1: Math.round(x1),
+            y1: Math.round(y1)
+          }
+        };
+      }).filter((w) => w.text.length > 0);
+
+      // Step 4: Render Screenshot & Merge with DOM Words
+      const img = new Image();
+      img.onload = async () => {
+        const width = img.naturalWidth;
+        const height = img.naturalHeight;
+
+        const domData = await domWordsPromise;
+        const domWords = domData.words || [];
+        const viewW = domData.viewportWidth || (window.innerWidth || 1280);
+        const viewH = domData.viewportHeight || (window.innerHeight || 800);
+        const scaleX = width / Math.max(1, viewW);
+        const scaleY = height / Math.max(1, viewH);
+
+        const scaledDomWords = domWords.map(w => ({
+          text: w.text,
+          confidence: w.confidence || 99,
+          bbox: {
+            x: Math.round(w.bbox.x * scaleX),
+            y: Math.round(w.bbox.y * scaleY),
+            width: Math.round(w.bbox.width * scaleX),
+            height: Math.round(w.bbox.height * scaleY)
+          }
+        }));
+
+        const mergedWords = [...scaledDomWords];
+        for (const ow of extractedWords) {
+          const isCovered = scaledDomWords.some(dw => {
+            const dx = Math.abs(dw.bbox.x - ow.bbox.x);
+            const dy = Math.abs(dw.bbox.y - ow.bbox.y);
+            return dx < 35 && dy < 25;
+          });
+          if (!isCovered) {
+            mergedWords.push(ow);
+          }
+        }
+
+        const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
+        console.log('🛡️ [Parallax] PII Detection Output:', piiDetection);
+
+        // 1. Render Original Canvas: Visual Hierarchy (Faint gray for non-PII, bold red/orange #E8491A for PII)
+        if (originalCanvas && originalWrapper) {
+          originalCanvas.width = width;
+          originalCanvas.height = height;
+          originalWrapper.classList.add('has-image');
+
+          const ctx = originalCanvas.getContext('2d');
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0);
+
+          // Map all words belonging to detected PII
+          const piiWordIndexSet = new Set();
+          for (const match of piiDetection.matches) {
+            for (const idx of (match.wordIndices || [])) {
+              piiWordIndexSet.add(idx);
+            }
+          }
+
+          // Step 1A: Subtle low-opacity gray outline for non-PII text (shows OCR coverage without clutter)
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.04)';
+          for (let i = 0; i < mergedWords.length; i++) {
+            if (!piiWordIndexSet.has(i)) {
+              const { x, y, width: bw, height: bh } = mergedWords[i].bbox;
+              ctx.strokeRect(x, y, bw, bh);
+              ctx.fillRect(x, y, bw, bh);
+            }
+          }
+
+          // Step 1B: Bold high-contrast red/orange (#E8491A) boxes ONLY for PII regions
+          for (const match of piiDetection.matches) {
+            const { x, y, width: bw, height: bh } = match.bbox;
+            const pad = 4;
+            const rx = Math.max(0, x - pad);
+            const ry = Math.max(0, y - pad);
+            const rw = bw + pad * 2;
+            const rh = bh + pad * 2;
+
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#E8491A';
+            ctx.fillStyle = 'rgba(232, 73, 26, 0.22)';
+            ctx.strokeRect(rx, ry, rw, rh);
+            ctx.fillRect(rx, ry, rw, rh);
+
+            // High-contrast PII label tag
+            const tagH = Math.min(15, Math.max(11, Math.round(rh * 0.45)));
+            const tagW = Math.min(rw, Math.max(50, match.type.length * 7 + 12));
+            ctx.fillStyle = '#E8491A';
+            ctx.fillRect(rx, Math.max(0, ry - tagH), tagW, tagH);
+            ctx.font = `bold ${Math.round(tagH * 0.72)}px "JetBrains Mono", monospace`;
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`! ${match.type}`, rx + 4, Math.max(0, ry - tagH) + tagH / 2);
+          }
+        }
+
+        // 2. Render Sanitized Canvas: Dramatic, High-Contrast Solid Blackout Privacy Redactions
+        if (sanitizedCanvas && sanitizedWrapper) {
+          sanitizedCanvas.width = width;
+          sanitizedCanvas.height = height;
+          sanitizedWrapper.classList.add('has-image');
+
+          const sCtx = sanitizedCanvas.getContext('2d');
+          sCtx.clearRect(0, 0, width, height);
+          sCtx.drawImage(img, 0, 0);
+
+          for (const match of piiDetection.matches) {
+            const { x, y, width: bw, height: bh } = match.bbox;
+            const padX = 8;
+            const padY = 5;
+            const rx = Math.max(0, x - padX);
+            const ry = Math.max(0, y - padY);
+            const rw = bw + padX * 2;
+            const rh = Math.max(22, bh + padY * 2);
+
+            // Solid Pitch-Black Block
+            sCtx.fillStyle = '#030712';
+            sCtx.fillRect(rx, ry, rw, rh);
+
+            // Sharp High-Contrast Highlight Border
+            sCtx.strokeStyle = match.isLowConfidence ? '#f43f5e' : '#00f2fe';
+            sCtx.lineWidth = 2;
+            sCtx.strokeRect(rx, ry, rw, rh);
+
+            // Bold White Monospace Label
+            const labelText = `[REDACTED ${match.type}]`;
+            const fontSize = Math.max(11, Math.min(14, Math.round(rh * 0.52)));
+            sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+            sCtx.textAlign = 'center';
+            sCtx.textBaseline = 'middle';
+            sCtx.fillStyle = '#ffffff';
+            sCtx.fillText(labelText, rx + rw / 2, ry + rh / 2);
+          }
+        }
+
+        // Update UI Badges
+        if (wordCountBadge) {
+          wordCountBadge.textContent = `${extractedWords.length} words`;
+          wordCountBadge.style.display = 'inline-block';
+        }
+
+        if (redactedCountBadge) {
+          redactedCountBadge.textContent = `${piiDetection.matches.length} Redacted`;
+          redactedCountBadge.style.display = 'inline-block';
+        }
+
+        // Update Audit Panel
+        if (auditDetectedCount) auditDetectedCount.textContent = piiDetection.matches.length;
+        if (auditRedactedCount) auditRedactedCount.textContent = piiDetection.matches.length;
+
+        // Step 6: Update Results Area with Summary List
+        renderResultsUI(piiDetection);
+
+        // Step 7: Update Status and Enable/Disable Send Button
+        if (piiDetection.isBlocked) {
+          setStatus('BLOCKED — Manual review required', 'blocked');
+          if (sendBtn) sendBtn.disabled = true;
+          if (auditActionStatus) auditActionStatus.textContent = 'BLOCKED (Review Required)';
+        } else {
+          setStatus('READY — Safe to proceed', 'ready');
+          if (sendBtn) sendBtn.disabled = false;
+          if (auditActionStatus) auditActionStatus.textContent = 'READY (Safe to Send)';
+        }
+
+        // Step 8: Log Scan to Local IndexedDB (STRICT METADATA ONLY)
+        try {
+          const pageUrl = activeTab ? activeTab.url : window.location.href;
+          const logId = await ParallaxDB.addLog({
+            pageUrl: pageUrl || 'active-tab',
+            timestamp: new Date().toISOString(),
+            detections: piiDetection.matches.map(m => ({
+              type: m.type,
+              confidence: m.confidence,
+              bbox: m.bbox
+            })),
+            redactedCount: piiDetection.matches.length,
+            blocked: piiDetection.isBlocked,
+            actionType: null,
+            actionApproved: null
+          });
+          currentLogEntryId = logId;
+          await renderPopupMetricsAndLogs();
+        } catch (dbErr) {
+          console.warn('[ParallaxDB] Popup logging error:', dbErr);
+        }
+
+        // Cache scan data for dispatch
+        const sanitizedText = PIIDetector.generateSanitizedText(extractedWords, piiDetection.matches);
+        currentScanData = {
+          sanitized_ocr_text: sanitizedText,
+          extracted_words: extractedWords,
+          pii_matches: piiDetection.matches,
+          status: piiDetection.status,
+          is_blocked: piiDetection.isBlocked
+        };
+      };
+
+      img.src = screenshotDataUrl;
+
+    } catch (err) {
+      console.error('[Parallax] Error during scan / OCR / PII pipeline:', err);
+      setStatus(`Error: ${err.message}`, 'error');
+      if (sendBtn) sendBtn.disabled = true;
+      if (auditActionStatus) auditActionStatus.textContent = 'Error';
+    } finally {
+      isScanning = false;
+      if (scanBtn) scanBtn.disabled = false;
+    }
+  }
+
   // Handle Scan Page Button Click
   if (scanBtn) {
-    scanBtn.addEventListener('click', async () => {
-      if (isScanning) return;
-      isScanning = true;
-      scanBtn.disabled = true;
-      if (sendBtn) sendBtn.disabled = true;
-      if (resultsDiv) resultsDiv.innerHTML = '';
-      if (approvalCard) approvalCard.style.display = 'none';
-      if (wordCountBadge) wordCountBadge.style.display = 'none';
-      if (redactedCountBadge) redactedCountBadge.style.display = 'none';
-      if (auditActionStatus) auditActionStatus.textContent = 'Scanning...';
-
-      try {
-        // Step 1: Capture Active Webpage Tab Viewport
-        setStatus('Capturing...', 'capturing');
-
-        const activeTab = await getActiveWebTab();
-
-        // 1. Request DOM words in parallel
-        const domWordsPromise = (async () => {
-          if (!activeTab || !activeTab.id) return { words: [], viewportWidth: 1280, viewportHeight: 800 };
-          return new Promise((resolve) => {
-            const timer = setTimeout(() => resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 }), 200);
-            chrome.tabs.sendMessage(activeTab.id, { action: 'GET_DOM_WORDS' }, (res) => {
-              clearTimeout(timer);
-              if (chrome.runtime.lastError || !res) {
-                resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 });
-              } else {
-                resolve(res);
-              }
-            });
-          });
-        })();
-
-        const captureResponse = await new Promise((resolve) => {
-          chrome.runtime.sendMessage({ action: 'SCAN_REQUEST' }, (response) => {
-            if (chrome.runtime.lastError) {
-              resolve({ success: false, error: chrome.runtime.lastError.message });
-            } else {
-              resolve(response || { success: false, error: 'No response from background service worker.' });
-            }
-          });
-        });
-
-        if (!captureResponse.success || !captureResponse.dataUrl) {
-          throw new Error(captureResponse.error || 'Viewport capture failed.');
-        }
-
-        const screenshotDataUrl = captureResponse.dataUrl;
-
-        // Step 2: Processing OCR Locally with Tesseract.js
-        setStatus('Processing OCR locally...', 'processing');
-
-        function downscaleImageForOCR(dataUrl, maxDimension = 1600) {
-          return new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => {
-              const origW = img.naturalWidth;
-              const origH = img.naturalHeight;
-              if (origW <= maxDimension && origH <= maxDimension) {
-                resolve({ dataUrl, scale: 1.0, origW, origH });
-                return;
-              }
-              const scale = Math.min(maxDimension / origW, maxDimension / origH);
-              const targetW = Math.round(origW * scale);
-              const targetH = Math.round(origH * scale);
-
-              const offscreen = document.createElement('canvas');
-              offscreen.width = targetW;
-              offscreen.height = targetH;
-              const ctx = offscreen.getContext('2d');
-              ctx.drawImage(img, 0, 0, targetW, targetH);
-              resolve({
-                dataUrl: offscreen.toDataURL('image/jpeg', 0.85),
-                scale: 1 / scale,
-                origW,
-                origH
-              });
-            };
-            img.onerror = () => resolve({ dataUrl, scale: 1.0, origW: 1280, origH: 800 });
-            img.src = dataUrl;
-          });
-        }
-
-        const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
-
-        console.log('[Parallax] Initializing local on-device Tesseract worker...');
-        const worker = await Tesseract.createWorker('eng', 1, {
-          workerPath: chrome.runtime.getURL('lib/worker.min.js'),
-          corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js'),
-          langPath: chrome.runtime.getURL('lib/lang-data'),
-          workerBlobURL: false,
-          gzip: true,
-          logger: (m) => {
-            if (m.status === 'recognizing text' && m.progress != null) {
-              const pct = Math.round(m.progress * 100);
-              setStatus(`Processing OCR locally... (${pct}%)`, 'processing');
-            }
-          }
-        });
-
-        console.log('[Parallax] Running OCR recognition on captured screenshot...');
-        const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
-          text: true,
-          blocks: true,
-          hocr: true,
-          tsv: true
-        });
-
-        await worker.terminate();
-
-        // Step 3: Extract Word-Level Information
-        let rawWords = [];
-        if (ocrResult.data && Array.isArray(ocrResult.data.words) && ocrResult.data.words.length > 0) {
-          rawWords = ocrResult.data.words;
-        } else if (ocrResult.data && Array.isArray(ocrResult.data.blocks)) {
-          for (const block of ocrResult.data.blocks) {
-            for (const paragraph of (block.paragraphs || [])) {
-              for (const line of (paragraph.lines || [])) {
-                for (const word of (line.words || [])) {
-                  rawWords.push(word);
-                }
-              }
-            }
-          }
-        }
-
-        const scaleMult = optimizedImage.scale;
-        const extractedWords = rawWords.map((word) => {
-          const x0 = (word.bbox ? word.bbox.x0 : (word.x0 || 0)) * scaleMult;
-          const y0 = (word.bbox ? word.bbox.y0 : (word.y0 || 0)) * scaleMult;
-          const x1 = (word.bbox ? word.bbox.x1 : (word.x1 || 0)) * scaleMult;
-          const y1 = (word.bbox ? word.bbox.y1 : (word.y1 || 0)) * scaleMult;
-          return {
-            text: word.text ? word.text.trim() : '',
-            confidence: typeof word.confidence === 'number' ? word.confidence : 90,
-            bbox: {
-              x: Math.round(x0),
-              y: Math.round(y0),
-              width: Math.round(x1 - x0),
-              height: Math.round(y1 - y0),
-              x0: Math.round(x0),
-              y0: Math.round(y0),
-              x1: Math.round(x1),
-              y1: Math.round(y1)
-            }
-          };
-        }).filter((w) => w.text.length > 0);
-
-        // Step 4: Render Screenshot & Merge with DOM Words
-        const img = new Image();
-        img.onload = async () => {
-          const width = img.naturalWidth;
-          const height = img.naturalHeight;
-
-          const domData = await domWordsPromise;
-          const domWords = domData.words || [];
-          const viewW = domData.viewportWidth || (window.innerWidth || 1280);
-          const viewH = domData.viewportHeight || (window.innerHeight || 800);
-          const scaleX = width / Math.max(1, viewW);
-          const scaleY = height / Math.max(1, viewH);
-
-          const scaledDomWords = domWords.map(w => ({
-            text: w.text,
-            confidence: w.confidence || 99,
-            bbox: {
-              x: Math.round(w.bbox.x * scaleX),
-              y: Math.round(w.bbox.y * scaleY),
-              width: Math.round(w.bbox.width * scaleX),
-              height: Math.round(w.bbox.height * scaleY)
-            }
-          }));
-
-          const mergedWords = [...scaledDomWords];
-          for (const ow of extractedWords) {
-            const isCovered = scaledDomWords.some(dw => {
-              const dx = Math.abs(dw.bbox.x - ow.bbox.x);
-              const dy = Math.abs(dw.bbox.y - ow.bbox.y);
-              return dx < 35 && dy < 25;
-            });
-            if (!isCovered) {
-              mergedWords.push(ow);
-            }
-          }
-
-          const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
-          console.log('🛡️ [Parallax] PII Detection Output:', piiDetection);
-
-          // Render Original Canvas
-          if (originalCanvas && originalWrapper) {
-            originalCanvas.width = width;
-            originalCanvas.height = height;
-            originalWrapper.classList.add('has-image');
-
-            const ctx = originalCanvas.getContext('2d');
-            ctx.clearRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0);
-
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = '#00f2fe';
-            ctx.fillStyle = 'rgba(0, 242, 254, 0.15)';
-
-            for (const item of mergedWords) {
-              const { x, y, width: w, height: h } = item.bbox;
-              ctx.strokeRect(x, y, w, h);
-              ctx.fillRect(x, y, w, h);
-            }
-          }
-
-          // Render Sanitized Canvas
-          if (sanitizedCanvas && sanitizedWrapper) {
-            sanitizedCanvas.width = width;
-            sanitizedCanvas.height = height;
-            sanitizedWrapper.classList.add('has-image');
-
-            const sCtx = sanitizedCanvas.getContext('2d');
-            sCtx.clearRect(0, 0, width, height);
-            sCtx.drawImage(img, 0, 0);
-
-            for (const match of piiDetection.matches) {
-              const { x, y, width: w, height: h } = match.bbox;
-              const pad = 4;
-              const rx = Math.max(0, x - pad);
-              const ry = Math.max(0, y - pad);
-              const rw = w + pad * 2;
-              const rh = h + pad * 2;
-
-              sCtx.fillStyle = '#000000';
-              sCtx.fillRect(rx, ry, rw, rh);
-
-              sCtx.strokeStyle = match.isLowConfidence ? '#f43f5e' : '#10b981';
-              sCtx.lineWidth = 1.5;
-              sCtx.strokeRect(rx, ry, rw, rh);
-
-              const labelText = `${match.type} REDACTED`;
-              const fontSize = Math.max(10, Math.min(13, Math.round(rh * 0.55)));
-              sCtx.font = `bold ${fontSize}px sans-serif`;
-              sCtx.textAlign = 'center';
-              sCtx.textBaseline = 'middle';
-              sCtx.fillStyle = '#ffffff';
-              sCtx.fillText(labelText, rx + rw / 2, ry + rh / 2);
-            }
-          }
-
-          // Update UI Badges
-          if (wordCountBadge) {
-            wordCountBadge.textContent = `${extractedWords.length} words`;
-            wordCountBadge.style.display = 'inline-block';
-          }
-
-          if (redactedCountBadge) {
-            redactedCountBadge.textContent = `${piiDetection.matches.length} Redacted`;
-            redactedCountBadge.style.display = 'inline-block';
-          }
-
-          // Update Audit Panel
-          if (auditDetectedCount) auditDetectedCount.textContent = piiDetection.matches.length;
-          if (auditRedactedCount) auditRedactedCount.textContent = piiDetection.matches.length;
-
-          // Step 6: Update Results Area with Summary List
-          renderResultsUI(piiDetection);
-
-          // Step 7: Update Status and Enable/Disable Send Button
-          if (piiDetection.isBlocked) {
-            setStatus('BLOCKED — Manual review required', 'blocked');
-            if (sendBtn) sendBtn.disabled = true;
-            if (auditActionStatus) auditActionStatus.textContent = 'BLOCKED (Review Required)';
-          } else {
-            setStatus('READY — Safe to proceed', 'ready');
-            if (sendBtn) sendBtn.disabled = false;
-            if (auditActionStatus) auditActionStatus.textContent = 'READY (Safe to Send)';
-          }
-
-          // Step 8: Log Scan to Local IndexedDB (STRICT METADATA ONLY)
-          try {
-            const pageUrl = activeTab ? activeTab.url : window.location.href;
-            const logId = await ParallaxDB.addLog({
-              pageUrl: pageUrl || 'active-tab',
-              timestamp: new Date().toISOString(),
-              detections: piiDetection.matches.map(m => ({
-                type: m.type,
-                confidence: m.confidence,
-                bbox: m.bbox
-              })),
-              redactedCount: piiDetection.matches.length,
-              blocked: piiDetection.isBlocked,
-              actionType: null,
-              actionApproved: null
-            });
-            currentLogEntryId = logId;
-            await renderPopupMetricsAndLogs();
-          } catch (dbErr) {
-            console.warn('[ParallaxDB] Popup logging error:', dbErr);
-          }
-
-          // Cache scan data for dispatch
-          const sanitizedText = PIIDetector.generateSanitizedText(extractedWords, piiDetection.matches);
-          currentScanData = {
-            sanitized_ocr_text: sanitizedText,
-            extracted_words: extractedWords,
-            pii_matches: piiDetection.matches,
-            status: piiDetection.status,
-            is_blocked: piiDetection.isBlocked
-          };
-        };
-
-        img.src = screenshotDataUrl;
-
-      } catch (err) {
-        console.error('[Parallax] Error during scan / OCR / PII pipeline:', err);
-        setStatus(`Error: ${err.message}`, 'error');
-        if (sendBtn) sendBtn.disabled = true;
-        if (auditActionStatus) auditActionStatus.textContent = 'Error';
-      } finally {
-        isScanning = false;
-        if (scanBtn) scanBtn.disabled = false;
-      }
-    });
+    scanBtn.addEventListener('click', performScan);
   }
 
   // Render PII breakdown and status in results area
@@ -581,10 +625,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       setStatus('Sending sanitized context...', 'processing');
       sendBtn.disabled = true;
-      if (auditActionStatus) auditActionStatus.textContent = 'Sending to Backend...';
-
       const promptEl = document.getElementById('userPromptInput');
       const customPrompt = promptEl ? promptEl.value.trim() : '';
+      const promptError = document.getElementById('popupPromptError');
+
+      // Client-Side Action Constraint Validation (Only allows Summarize Page & Fill Form Field)
+      if (customPrompt) {
+        const lower = customPrompt.toLowerCase();
+        const isSummarize = lower.includes('summar') || lower.includes('overview') || lower.includes('brief') || lower.includes('tl;dr') || lower.includes('what is');
+        const isFill = lower.includes('fill') || lower.includes('input') || lower.includes('type') || lower.includes('form') || lower.includes('roll') || lower.includes('city') || lower.includes('name') || lower.includes('enter') || lower.includes('guide') || lower.includes('auto') || lower.includes('click') || lower.includes('next') || lower.includes('meeting') || lower.includes('login') || lower.includes('submit');
+
+        if (!isSummarize && !isFill) {
+          if (promptError) {
+            promptError.style.display = 'block';
+            setTimeout(() => { if (promptError) promptError.style.display = 'none'; }, 4500);
+          }
+          setStatus('Action not supported in current build', 'warning');
+          sendBtn.disabled = false;
+          return;
+        }
+      }
+      if (promptError) promptError.style.display = 'none';
 
       const payload = {
         sanitized_ocr_text: currentScanData.sanitized_ocr_text,

@@ -196,6 +196,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // --------------------------------------------------------------------------
+  // Presenter Mode Engine (In-Memory Only, Default ON for Clean Demo)
+  // --------------------------------------------------------------------------
+  let isPresenterMode = true;
+
+  function updatePresenterModeUI() {
+    const metricsPanel = document.getElementById('ptbMetricsPanel');
+    const logSection = document.getElementById('ptbLogSection');
+    const presenterBtn = document.getElementById('ptbPresenterModeBtn');
+    const presenterText = document.getElementById('ptbPresenterText');
+    const receiptsBtn = document.getElementById('ptbToggleReceiptsBtn');
+
+    if (isPresenterMode) {
+      if (metricsPanel) metricsPanel.classList.add('presenter-hidden');
+      if (logSection) logSection.classList.add('presenter-hidden');
+      if (presenterBtn) presenterBtn.classList.add('active');
+      if (presenterText) presenterText.textContent = 'Presenter Mode: ON';
+      if (receiptsBtn) receiptsBtn.textContent = '📊 Reveal Metrics & Receipts ▼';
+    } else {
+      if (metricsPanel) metricsPanel.classList.remove('presenter-hidden');
+      if (logSection) logSection.classList.remove('presenter-hidden');
+      if (presenterBtn) presenterBtn.classList.remove('active');
+      if (presenterText) presenterText.textContent = 'Presenter Mode: OFF';
+      if (receiptsBtn) receiptsBtn.textContent = '▲ Hide Metrics & Receipts';
+    }
+  }
+
+  const presenterModeBtn = document.getElementById('ptbPresenterModeBtn');
+  if (presenterModeBtn) {
+    presenterModeBtn.addEventListener('click', () => {
+      isPresenterMode = !isPresenterMode;
+      updatePresenterModeUI();
+    });
+  }
+
+  const toggleReceiptsBtn = document.getElementById('ptbToggleReceiptsBtn');
+  if (toggleReceiptsBtn) {
+    toggleReceiptsBtn.addEventListener('click', () => {
+      isPresenterMode = !isPresenterMode;
+      updatePresenterModeUI();
+    });
+  }
+
+  updatePresenterModeUI();
+
   // Toggle Showcase Drawer
   if (drawerBtn) {
     drawerBtn.addEventListener('click', () => {
@@ -416,7 +461,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP)
             const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
 
-            // 1. Original View: Real Webpage Image + Cyan Bounding Boxes
+            // 1. Original View: Visual Hierarchy (Faint gray for non-PII, bold red/orange #E8491A for PII)
             if (origCanvas && origWrapper) {
               origCanvas.width = width;
               origCanvas.height = height;
@@ -425,17 +470,55 @@ document.addEventListener('DOMContentLoaded', async () => {
               ctx.clearRect(0, 0, width, height);
               ctx.drawImage(img, 0, 0); // Draws the REAL screenshot!
 
-              ctx.lineWidth = 2.5;
-              ctx.strokeStyle = '#00f2fe';
-              ctx.fillStyle = 'rgba(0, 242, 254, 0.15)';
-              for (const item of mergedWords) {
-                const { x, y, width: bw, height: bh } = item.bbox;
-                ctx.strokeRect(x, y, bw, bh);
-                ctx.fillRect(x, y, bw, bh);
+              // Map all words belonging to detected PII
+              const piiWordIndexSet = new Set();
+              for (const match of piiDetection.matches) {
+                for (const idx of (match.wordIndices || [])) {
+                  piiWordIndexSet.add(idx);
+                }
+              }
+
+              // Step 1A: Draw subtle low-opacity gray outline for non-PII text (shows OCR coverage without clutter)
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+              ctx.fillStyle = 'rgba(148, 163, 184, 0.04)';
+              for (let i = 0; i < mergedWords.length; i++) {
+                if (!piiWordIndexSet.has(i)) {
+                  const { x, y, width: bw, height: bh } = mergedWords[i].bbox;
+                  ctx.strokeRect(x, y, bw, bh);
+                  ctx.fillRect(x, y, bw, bh);
+                }
+              }
+
+              // Step 1B: Draw bold high-contrast red/orange (#E8491A) boxes ONLY for PII regions
+              for (const match of piiDetection.matches) {
+                const { x, y, width: bw, height: bh } = match.bbox;
+                const pad = 4;
+                const rx = Math.max(0, x - pad);
+                const ry = Math.max(0, y - pad);
+                const rw = bw + pad * 2;
+                const rh = bh + pad * 2;
+
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#E8491A';
+                ctx.fillStyle = 'rgba(232, 73, 26, 0.22)';
+                ctx.strokeRect(rx, ry, rw, rh);
+                ctx.fillRect(rx, ry, rw, rh);
+
+                // High-contrast PII label tag
+                const tagH = Math.min(15, Math.max(11, Math.round(rh * 0.45)));
+                const tagW = Math.min(rw, Math.max(50, match.type.length * 7 + 12));
+                ctx.fillStyle = '#E8491A';
+                ctx.fillRect(rx, Math.max(0, ry - tagH), tagW, tagH);
+                ctx.font = `bold ${Math.round(tagH * 0.72)}px "JetBrains Mono", monospace`;
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`! ${match.type}`, rx + 4, Math.max(0, ry - tagH) + tagH / 2);
               }
             }
 
-            // 2. Sanitized View: Real Webpage Image + Solid Blackout Privacy Redactions
+            // 2. Sanitized View: Dramatic, High-Contrast Solid Blackout Privacy Redactions
             if (sanCanvas && sanWrapper) {
               sanCanvas.width = width;
               sanCanvas.height = height;
@@ -446,21 +529,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
               for (const match of piiDetection.matches) {
                 const { x, y, width: bw, height: bh } = match.bbox;
-                const pad = 5;
-                const rx = Math.max(0, x - pad);
-                const ry = Math.max(0, y - pad);
-                const rw = bw + pad * 2;
-                const rh = bh + pad * 2;
+                const padX = 8;
+                const padY = 5;
+                const rx = Math.max(0, x - padX);
+                const ry = Math.max(0, y - padY);
+                const rw = bw + padX * 2;
+                const rh = Math.max(22, bh + padY * 2);
 
-                sCtx.fillStyle = '#05070d';
+                // Solid Pitch-Black Block
+                sCtx.fillStyle = '#030712';
                 sCtx.fillRect(rx, ry, rw, rh);
 
+                // Sharp High-Contrast Highlight Border
                 sCtx.strokeStyle = match.isLowConfidence ? '#f43f5e' : '#00f2fe';
                 sCtx.lineWidth = 2;
                 sCtx.strokeRect(rx, ry, rw, rh);
 
+                // Bold White Monospace Label
                 const labelText = `[REDACTED ${match.type}]`;
-                const fontSize = Math.max(10, Math.min(13, Math.round(rh * 0.52)));
+                const fontSize = Math.max(11, Math.min(14, Math.round(rh * 0.52)));
                 sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
                 sCtx.textAlign = 'center';
                 sCtx.textBaseline = 'middle';
@@ -631,6 +718,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       const sanitizedImageDataUrl = sanCanvas ? sanCanvas.toDataURL('image/jpeg', 0.8) : '';
       const promptInput = document.getElementById('ptbUserPrompt');
       const customPrompt = promptInput ? promptInput.value.trim() : '';
+      const promptError = document.getElementById('ptbPromptError');
+
+      // Client-Side Action Constraint Validation (Only allows Summarize Page & Fill Form Field)
+      if (customPrompt) {
+        const lower = customPrompt.toLowerCase();
+        const isSummarize = lower.includes('summar') || lower.includes('overview') || lower.includes('brief') || lower.includes('tl;dr') || lower.includes('what is');
+        const isFill = lower.includes('fill') || lower.includes('input') || lower.includes('type') || lower.includes('form') || lower.includes('roll') || lower.includes('city') || lower.includes('name') || lower.includes('enter') || lower.includes('guide') || lower.includes('auto') || lower.includes('click') || lower.includes('next') || lower.includes('meeting') || lower.includes('login') || lower.includes('submit');
+
+        if (!isSummarize && !isFill) {
+          if (promptError) {
+            promptError.style.display = 'block';
+            setTimeout(() => { if (promptError) promptError.style.display = 'none'; }, 4500);
+          }
+          setStatus('Action not supported in current build', 'warning');
+          sendBtn.disabled = false;
+          return;
+        }
+      }
+      if (promptError) promptError.style.display = 'none';
 
       setStatus('Consulting AI Agent...', 'processing');
       sendBtn.disabled = true;
