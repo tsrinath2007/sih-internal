@@ -104,21 +104,38 @@
       const rect = inp.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
         const parts = val.split(/\s+/);
-        let currX = rect.left + 4;
-        for (const p of parts) {
-          if (!p) continue;
-          const pw = Math.min(rect.width, Math.max(16, p.length * 8));
-          words.push({
-            text: p,
-            confidence: 99,
-            bbox: {
-              x: Math.round(currX),
-              y: Math.round(rect.top + 2),
-              width: Math.round(pw),
-              height: Math.round(rect.height - 4)
-            }
-          });
-          currX += pw + 4;
+        // For compact buttons/avatars/icons (< 100px) or non-text inputs, snap bounding box to the exact element rect
+        if (rect.width <= 100 || (inp.tagName !== 'INPUT' && inp.tagName !== 'TEXTAREA')) {
+          for (const p of parts) {
+            if (!p) continue;
+            words.push({
+              text: p,
+              confidence: 99,
+              bbox: {
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height)
+              }
+            });
+          }
+        } else {
+          let currX = rect.left + 4;
+          for (const p of parts) {
+            if (!p) continue;
+            const pw = Math.min(rect.width, Math.max(16, p.length * 8));
+            words.push({
+              text: p,
+              confidence: 99,
+              bbox: {
+                x: Math.round(currX),
+                y: Math.round(rect.top + 2),
+                width: Math.round(pw),
+                height: Math.round(rect.height - 4)
+              }
+            });
+            currX += pw + 4;
+          }
         }
       }
     }
