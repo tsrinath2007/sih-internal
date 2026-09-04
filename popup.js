@@ -310,6 +310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const scaledDomWords = domWords.map(w => ({
           text: w.text,
+          isAvatar: w.isAvatar,
           confidence: w.confidence || 99,
           bbox: {
             x: Math.round(w.bbox.x * scaleX),
@@ -409,55 +410,76 @@ document.addEventListener('DOMContentLoaded', async () => {
           for (const match of piiDetection.matches) {
             const { x, y, width: bw, height: bh } = match.bbox;
             const isAvatar = match.type === 'AVATAR';
-            const padX = isAvatar ? 4 : 8;
-            const padY = isAvatar ? 4 : 5;
-            const rx = Math.max(0, x - padX);
-            const ry = Math.max(0, y - padY);
-            const rw = bw + padX * 2;
-            const rh = Math.max(22, bh + padY * 2);
 
-            // Step A: Multi-Pass Frosted Gaussian Blur on the underlying image
-            sCtx.save();
-            sCtx.beginPath();
-            sCtx.rect(rx, ry, rw, rh);
-            sCtx.clip();
+            if (isAvatar) {
+              // --- TRUE PHOTOGRAPHIC GAUSSIAN BLUR (Soft Frosted Face Privacy) ---
+              const pad = 4;
+              const rx = Math.max(0, x - pad);
+              const ry = Math.max(0, y - pad);
+              const rw = bw + pad * 2;
+              const rh = bh + pad * 2;
+              const radius = Math.min(rw, rh) / 2;
 
-            // 1. Pixel downscale-upscale blur (100% works across all canvas renderers)
-            const off = document.createElement('canvas');
-            const scaleF = 0.08;
-            off.width = Math.max(2, Math.round(rw * scaleF));
-            off.height = Math.max(2, Math.round(rh * scaleF));
-            const oCtx = off.getContext('2d');
-            oCtx.drawImage(img, rx, ry, rw, rh, 0, 0, off.width, off.height);
-            sCtx.imageSmoothingEnabled = true;
-            sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
+              sCtx.save();
+              sCtx.beginPath();
+              if (typeof sCtx.roundRect === 'function') {
+                sCtx.roundRect(rx, ry, rw, rh, [radius]);
+              } else {
+                sCtx.arc(rx + rw / 2, ry + rh / 2, radius, 0, Math.PI * 2);
+              }
+              sCtx.clip();
 
-            // 2. Native Canvas blur pass
-            try {
-              sCtx.filter = 'blur(10px)';
-              sCtx.drawImage(img, 0, 0);
-            } catch (e) {}
+              // Step 1: Multi-Pass Downscale-Upscale Extreme Gaussian Blur
+              const off = document.createElement('canvas');
+              const scaleF = 0.04; // 4% downscale = silky smooth heavy photographic blur
+              off.width = Math.max(3, Math.round(rw * scaleF));
+              off.height = Math.max(3, Math.round(rh * scaleF));
+              const oCtx = off.getContext('2d');
+              oCtx.drawImage(img, rx, ry, rw, rh, 0, 0, off.width, off.height);
 
-            sCtx.restore();
+              sCtx.imageSmoothingEnabled = true;
+              sCtx.imageSmoothingQuality = 'high';
+              sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
 
-            // Step B: Frosted Privacy Glass Tint Overlay (Semi-translucent so the blur effect is clearly visible)
-            sCtx.fillStyle = isAvatar ? 'rgba(15, 23, 42, 0.50)' : 'rgba(3, 7, 18, 0.72)';
-            sCtx.fillRect(rx, ry, rw, rh);
+              // Step 2: Native Canvas filter blur for ultra-smooth frosted photo appearance
+              try {
+                sCtx.filter = 'blur(16px)';
+                sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
+              } catch (e) {}
 
-            // Step C: Sharp High-Contrast Highlight Border
-            const strokeColor = match.isLowConfidence ? '#f43f5e' : (isAvatar ? '#a855f7' : '#00f2fe');
-            sCtx.strokeStyle = strokeColor;
-            sCtx.lineWidth = 2;
-            sCtx.strokeRect(rx, ry, rw, rh);
+              // Step 3: Delicate Frosted Glass Privacy Sheen (Preserves all photo colors while fully obscuring features)
+              sCtx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+              sCtx.fillRect(rx, ry, rw, rh);
 
-            // Step D: Bold Monospace Centered Label
-            const labelText = isAvatar ? '[BLURRED AVATAR]' : `[REDACTED ${match.type}]`;
-            const fontSize = Math.max(11, Math.min(14, Math.round(rh * 0.52)));
-            sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
-            sCtx.textAlign = 'center';
-            sCtx.textBaseline = 'middle';
-            sCtx.fillStyle = '#ffffff';
-            sCtx.fillText(labelText, rx + rw / 2, ry + rh / 2);
+              sCtx.restore();
+
+            } else {
+              // --- TEXT PII REDACTION (Dramatic Pitch-Black Solid Redaction Box) ---
+              const padX = 8;
+              const padY = 5;
+              const rx = Math.max(0, x - padX);
+              const ry = Math.max(0, y - padY);
+              const rw = bw + padX * 2;
+              const rh = Math.max(22, bh + padY * 2);
+
+              // Solid Pitch-Black Block
+              sCtx.fillStyle = '#030712';
+              sCtx.fillRect(rx, ry, rw, rh);
+
+              // Sharp High-Contrast Highlight Border
+              sCtx.strokeStyle = match.isLowConfidence ? '#f43f5e' : '#00f2fe';
+              sCtx.lineWidth = 2;
+              sCtx.strokeRect(rx, ry, rw, rh);
+
+              // Bold White Monospace Centered Label
+              const labelText = `[REDACTED ${match.type}]`;
+              const fontSize = Math.max(11, Math.min(14, Math.round(rh * 0.52)));
+              sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+              sCtx.textAlign = 'center';
+              sCtx.textBaseline = 'middle';
+              sCtx.fillStyle = '#ffffff';
+              sCtx.fillText(labelText, rx + rw / 2, ry + rh / 2);
+            }
           }
         }
 

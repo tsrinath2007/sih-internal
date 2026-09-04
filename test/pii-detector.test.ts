@@ -96,4 +96,37 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(cardDetection?.originalValue).toBe('4532 0150 1234 5671');
     expect(cardDetection?.surrogateValue).toBe('**** **** **** 1234');
   });
+
+  it('detects AVATAR and text PII correctly in PIIDetector core engine', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const sampleWords = [
+      { text: '[PHOTO_AVATAR]', isAvatar: true, confidence: 99, bbox: { x: 50, y: 50, width: 64, height: 64 } },
+      { text: 'Google', confidence: 95, bbox: { x: 120, y: 50, width: 45, height: 16 } },
+      { text: 'Account:', confidence: 95, bbox: { x: 170, y: 50, width: 55, height: 16 } },
+      { text: 'john.doe@gmail.com', confidence: 98, bbox: { x: 230, y: 50, width: 140, height: 16 } },
+      { text: 'Copyright', confidence: 95, bbox: { x: 50, y: 150, width: 60, height: 16 } },
+      { text: '2026', confidence: 95, bbox: { x: 115, y: 150, width: 35, height: 16 } },
+      { text: 'Call', confidence: 95, bbox: { x: 50, y: 200, width: 30, height: 16 } },
+      { text: '+91', confidence: 95, bbox: { x: 85, y: 200, width: 25, height: 16 } },
+      { text: '9876543210', confidence: 98, bbox: { x: 115, y: 200, width: 80, height: 16 } }
+    ];
+
+    const result = PIIDetector.detectPII(sampleWords);
+
+    expect(result.matches.length).toBe(3);
+    const types = result.matches.map((m: any) => m.type);
+    expect(types).toContain('AVATAR');
+    expect(types).toContain('EMAIL');
+    expect(types).toContain('PHONE');
+    expect(types).not.toContain('OTP'); // 2026 should NOT be flagged as OTP
+
+    const avatarMatch = result.matches.find((m: any) => m.type === 'AVATAR');
+    expect(avatarMatch?.bbox).toEqual({ x: 50, y: 50, width: 64, height: 64 });
+
+    const emailMatch = result.matches.find((m: any) => m.type === 'EMAIL');
+    expect(emailMatch?.matchedText).toBe('john.doe@gmail.com');
+  });
 });
+

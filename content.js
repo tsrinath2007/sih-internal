@@ -141,23 +141,20 @@
     }
 
     // Auto-detect User Avatars, Profile Pictures, and Circular Face Photos for Anonymization
-    const avatarCandidates = document.querySelectorAll('img, image, [role="img"], [style*="background-image"], .gb_c, .gb_d, .avatar, [class*="avatar" i], [class*="profile" i]');
+    const avatarCandidates = document.querySelectorAll('img, image, [role="img"], svg, [style*="background-image"]');
     for (const el of avatarCandidates) {
       if (el.id === 'parallax-topbar-iframe') continue;
 
-      // If element is a container/button, target the actual inner <img> directly if present
-      const realImg = (el.tagName === 'IMG' || el.tagName === 'image') ? el : el.querySelector('img, image');
-      const targetEl = realImg || el;
+      const rect = el.getBoundingClientRect();
+      if (rect.width >= 24 && rect.width <= 240 && rect.height >= 24 && rect.height <= 240 && rect.bottom > 0 && rect.top < window.innerHeight) {
+        const classStr = (el.getAttribute('class') || el.className?.baseVal || el.className || '').toString().toLowerCase();
+        const srcStr = (el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('xlink:href') || el.src || '').toLowerCase();
+        const styleStr = (el.getAttribute('style') || '').toLowerCase();
+        const altStr = (el.getAttribute('alt') || '').toLowerCase();
+        const ariaStr = (el.getAttribute('aria-label') || el.parentElement?.getAttribute('aria-label') || '').toLowerCase();
+        const parentClass = (el.parentElement?.getAttribute('class') || '').toLowerCase();
 
-      const rect = targetEl.getBoundingClientRect();
-      if (rect.width >= 24 && rect.width <= 180 && rect.height >= 24 && rect.height <= 180 && rect.bottom > 0 && rect.top < window.innerHeight) {
-        const classStr = (targetEl.getAttribute('class') || targetEl.className?.baseVal || targetEl.className || '').toString().toLowerCase();
-        const srcStr = (targetEl.getAttribute('src') || targetEl.getAttribute('href') || targetEl.getAttribute('xlink:href') || targetEl.src || '').toLowerCase();
-        const styleStr = (targetEl.getAttribute('style') || '').toLowerCase();
-        const altStr = (targetEl.getAttribute('alt') || '').toLowerCase();
-        const ariaStr = (targetEl.getAttribute('aria-label') || targetEl.parentElement?.getAttribute('aria-label') || '').toLowerCase();
-
-        // Check if this is a genuine user avatar / profile photo
+        // Check if this image element is a genuine user avatar / profile photo
         const isAvatar = 
           srcStr.includes('googleusercontent.com') ||
           srcStr.includes('avatar') ||
@@ -168,9 +165,11 @@
           srcStr.includes('twimg.com/profile_images') ||
           srcStr.includes('githubusercontent.com/u') ||
           styleStr.includes('googleusercontent') ||
+          styleStr.includes('avatar') ||
           classStr.includes('avatar') ||
           classStr.includes('profile-pic') ||
           classStr.includes('user-avatar') ||
+          parentClass.includes('avatar') ||
           altStr.includes('profile') ||
           altStr.includes('avatar') ||
           altStr.includes('account') ||
