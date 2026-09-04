@@ -149,6 +149,34 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(refined[0].bbox.width).toBeLessThan(600);
     expect(refined[0].bbox.height).toBeLessThan(450);
   });
+
+  it('detects Unicode small-caps, superscript, and subscript obfuscated PII', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    // Test unwrapper
+    expect(PIIDetector.unwrapUnicodeSmallText('ᵗˢʳᶦⁿᵃᵗʰ@ᵗᵒᵐᵃᵗᵒ.ᶜᵒᵐ')).toBe('tsrinath@tomato.com');
+    expect(PIIDetector.unwrapUnicodeSmallText('ᴛsʀɪɴᴀᴛʜ@ᴛᴏᵐᴀᴛᴏ.ᴄᴏᴍ')).toBe('tsrinath@tomato.com');
+    expect(PIIDetector.unwrapUnicodeSmallText('⁺⁹¹ ⁹⁸⁷⁶⁵ ⁴³²¹⁰')).toBe('+91 98765 43210');
+
+    // Test detector on stylized words
+    const stylizedWords = [
+      { text: 'Email:', confidence: 95, bbox: { x: 50, y: 50, width: 50, height: 16 } },
+      { text: 'ᵗˢʳᶦⁿᵃᵗʰ@ᵗᵒᵐᵃᵗᵒ.ᶜᵒᵐ', confidence: 98, bbox: { x: 110, y: 50, width: 120, height: 16 } },
+      { text: 'Phone:', confidence: 95, bbox: { x: 50, y: 100, width: 50, height: 16 } },
+      { text: '⁺⁹¹', confidence: 95, bbox: { x: 110, y: 100, width: 25, height: 16 } },
+      { text: '⁹⁸⁷⁶⁵⁴³²¹⁰', confidence: 98, bbox: { x: 140, y: 100, width: 80, height: 16 } }
+    ];
+
+    const result = PIIDetector.detectPII(stylizedWords);
+    expect(result.matches.length).toBe(2);
+
+    const emailMatch = result.matches.find((m: any) => m.type === 'EMAIL');
+    expect(emailMatch).toBeDefined();
+
+    const phoneMatch = result.matches.find((m: any) => m.type === 'PHONE');
+    expect(phoneMatch).toBeDefined();
+  });
 });
 
 

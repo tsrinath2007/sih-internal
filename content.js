@@ -93,7 +93,7 @@
       }
     }
 
-    // Include Form Inputs and Textareas
+    // Include Form Inputs and Textareas (Line-by-line bounding boxes for textareas)
     const inputs = document.querySelectorAll('input, textarea');
     for (const inp of inputs) {
       if (inp.id === 'parallax-topbar-iframe') continue;
@@ -101,22 +101,63 @@
       if (!val) continue;
       const rect = inp.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
-        const parts = val.split(/\s+/);
-        let currX = rect.left + 8;
-        for (const p of parts) {
-          if (!p) continue;
-          const pw = Math.min(rect.width - 16, Math.max(20, p.length * 8.5));
-          words.push({
-            text: p,
-            confidence: 99,
-            bbox: {
-              x: Math.round(currX),
-              y: Math.round(rect.top + 2),
-              width: Math.round(pw),
-              height: Math.round(rect.height - 4)
+        const isTextarea = inp.tagName === 'TEXTAREA';
+        const computed = window.getComputedStyle(inp);
+        const padLeft = parseFloat(computed.paddingLeft) || 8;
+        const padTop = parseFloat(computed.paddingTop) || 6;
+        const fontSize = parseFloat(computed.fontSize) || 14;
+        const lineH = isTextarea ? (parseFloat(computed.lineHeight) || Math.round(fontSize * 1.35)) : Math.min(rect.height - 4, Math.max(16, Math.round(fontSize * 1.3)));
+
+        if (isTextarea) {
+          const lines = val.split('\n');
+          let currY = rect.top + padTop;
+
+          for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            const lineText = lines[lineIdx];
+            if (currY + lineH > rect.bottom) break;
+
+            const parts = lineText.split(/\s+/);
+            let currX = rect.left + padLeft;
+
+            for (const p of parts) {
+              if (!p) continue;
+              const pw = Math.min(rect.width - padLeft * 2, Math.max(16, p.length * (fontSize * 0.62)));
+              words.push({
+                text: p,
+                confidence: 99,
+                bbox: {
+                  x: Math.round(currX),
+                  y: Math.round(currY),
+                  width: Math.round(pw),
+                  height: Math.round(Math.min(lineH, fontSize * 1.3))
+                }
+              });
+              currX += pw + 4;
             }
-          });
-          currX += pw + 4;
+            currY += lineH;
+          }
+        } else {
+          // Standard single-line input
+          const textH = Math.min(rect.height - 4, Math.max(16, Math.round(fontSize * 1.3)));
+          const inputPadTop = Math.max(2, Math.round((rect.height - textH) / 2));
+          const parts = val.split(/\s+/);
+          let currX = rect.left + padLeft;
+
+          for (const p of parts) {
+            if (!p) continue;
+            const pw = Math.min(rect.width - padLeft * 2, Math.max(16, p.length * (fontSize * 0.62)));
+            words.push({
+              text: p,
+              confidence: 99,
+              bbox: {
+                x: Math.round(currX),
+                y: Math.round(rect.top + inputPadTop),
+                width: Math.round(pw),
+                height: Math.round(textH)
+              }
+            });
+            currX += pw + 4;
+          }
         }
       }
     }

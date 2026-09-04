@@ -11,11 +11,43 @@
   }
 }(typeof self !== 'undefined' ? self : this, function () {
 
+  const UNICODE_TRANSLITERATION_MAP = {
+    // Small Caps
+    'ᴀ': 'a', 'ᴁ': 'ae', 'ʙ': 'b', 'ᴃ': 'b', 'ᴄ': 'c', 'ᴅ': 'd', 'ᴆ': 'd', 'ᴇ': 'e',
+    'ꜰ': 'f', 'ɢ': 'g', 'ʛ': 'g', 'ʜ': 'h', 'ɪ': 'i', 'ᴊ': 'j', 'ᴋ': 'k', 'ʟ': 'l',
+    'ᴌ': 'l', 'ᴍ': 'm', 'ɴ': 'n', 'ᴎ': 'n', 'ᴏ': 'o', 'ɶ': 'oe', 'ᴐ': 'o', 'ᴑ': 'o',
+    'ᴘ': 'p', 'ᴙ': 'r', 'ᴚ': 'r', 'ʀ': 'r', 'ʁ': 'r', 'ꜱ': 's', 'ᴛ': 't', 'ᴜ': 'u',
+    'ᴠ': 'v', 'ᴡ': 'w', 'ʏ': 'y', 'ᴢ': 'z',
+    // Extra superscripts / subscripts / phonetic modifiers
+    'ᵗ': 't', 'ˢ': 's', 'ʳ': 'r', 'ᶦ': 'i', 'ⁿ': 'n', 'ᵃ': 'a', 'ᵇ': 'b', 'ᶜ': 'c',
+    'ᵈ': 'd', 'ᵉ': 'e', 'ᶠ': 'f', 'ᵍ': 'g', 'ʰ': 'h', 'ʲ': 'j', 'ᵏ': 'k', 'ˡ': 'l',
+    'ᵐ': 'm', 'ᵒ': 'o', 'ᵖ': 'p', 'ᵘ': 'u', 'ᵛ': 'v', 'ʷ': 'w', 'ˣ': 'x', 'ʸ': 'y',
+    'ᶻ': 'z', 'ᵅ': 'a', 'ᵝ': 'b', 'ᵞ': 'g', 'ᵟ': 'd', 'ᵋ': 'e', 'ᶿ': 'th',
+    'ₐ': 'a', 'ₑ': 'e', 'ₕ': 'h', 'ᵢ': 'i', 'ⱼ': 'j', 'ₖ': 'k', 'ₗ': 'l', 'ₘ': 'm',
+    'ₙ': 'n', 'ₒ': 'o', 'ₚ': 'p', 'ᵣ': 'r', 'ₛ': 's', 'ₜ': 't', 'ᵤ': 'u', 'ᵥ': 'v', 'ₓ': 'x',
+    // Stylized @ and .
+    '﹫': '@', '＠': '@', '©': '@', '•': '.', '․': '.', '。': '.', '．': '.'
+  };
+
+  /**
+   * Unwraps stylized Unicode small text (Small Caps, Superscripts, Subscripts, Fullwidth) into plain ASCII
+   */
+  function unwrapUnicodeSmallText(str) {
+    if (!str || typeof str !== 'string') return '';
+    const norm = str.normalize('NFKD');
+    let res = '';
+    for (let i = 0; i < norm.length; i++) {
+      const ch = norm[i];
+      res += UNICODE_TRANSLITERATION_MAP[ch] || ch;
+    }
+    return res;
+  }
+
   /**
    * Luhn algorithm validation for payment card numbers
    */
   function luhnCheck(numStr) {
-    const digits = numStr.replace(/\D/g, '');
+    const digits = unwrapUnicodeSmallText(numStr).replace(/\D/g, '');
     if (digits.length < 13 || digits.length > 19) return false;
 
     let sum = 0;
@@ -66,43 +98,46 @@
   function trimSlice(slice, type) {
     let result = [...slice];
     if (type === 'EMAIL') {
-      // Find the token that contains '@' or '©'
-      const atIdx = result.findIndex(w => /[@©]/.test(w.text));
+      // Find the token that contains '@', '©', '﹫', '＠', or unwrapped '@'
+      const atIdx = result.findIndex(w => /[@©﹫＠]/.test(w.text) || /[@©﹫＠]/.test(unwrapUnicodeSmallText(w.text)));
       if (atIdx !== -1) {
         let start = atIdx;
+        const normPrev = start > 0 ? unwrapUnicodeSmallText(result[start - 1].text) : '';
+        const normCurr = unwrapUnicodeSmallText(result[atIdx].text);
         // If the token starts with '@', include the preceding token if it's alphanumeric username
-        if (start > 0 && /^[@©]/.test(result[atIdx].text) && /^[a-zA-Z0-9._%+-]+$/.test(result[start - 1].text)) {
+        if (start > 0 && /^[@©﹫＠]/.test(normCurr) && /^[a-zA-Z0-9._%+-]+$/.test(normPrev)) {
           start--;
         }
         let end = atIdx;
+        const normNext = end < result.length - 1 ? unwrapUnicodeSmallText(result[end + 1].text) : '';
         // If the token ends with '@' or '.', include the next token if it's domain part
-        if (end < result.length - 1 && (/[@©]$/.test(result[end].text) || /\.$/.test(result[end].text)) && /^[a-zA-Z0-9.-]+$/.test(result[end + 1].text)) {
+        if (end < result.length - 1 && (/[@©﹫＠]$/.test(normCurr) || /\.$/.test(normCurr)) && /^[a-zA-Z0-9.-]+$/.test(normNext)) {
           end++;
         }
         result = result.slice(start, end + 1);
       } else {
-        result = result.filter(w => /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(w.text));
+        result = result.filter(w => /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(unwrapUnicodeSmallText(w.text)));
       }
     } else if (type === 'CARD') {
-      while (result.length > 0 && !/\d/.test(result[0].text)) {
+      while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[0].text))) {
         result.shift();
       }
-      while (result.length > 0 && !/\d/.test(result[result.length - 1].text)) {
+      while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[result.length - 1].text))) {
         result.pop();
       }
-      result = result.filter(w => /[\d\-]/.test(w.text));
+      result = result.filter(w => /[\d\-]/.test(unwrapUnicodeSmallText(w.text)));
     } else if (type === 'PHONE') {
-      while (result.length > 0 && !/[\d+]/.test(result[0].text)) {
+      while (result.length > 0 && !/[\d+]/.test(unwrapUnicodeSmallText(result[0].text))) {
         result.shift();
       }
-      while (result.length > 0 && !/\d/.test(result[result.length - 1].text)) {
+      while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[result.length - 1].text))) {
         result.pop();
       }
-      result = result.filter(w => /[\d+\-\(\)\.]/.test(w.text));
+      result = result.filter(w => /[\d+\-\(\)\.]/.test(unwrapUnicodeSmallText(w.text)));
     } else if (type === 'OTP' || type === 'ACCOUNT_NUM') {
-      result = result.filter(w => /^\d+$/.test(w.text.replace(/[^0-9]/g, '')));
+      result = result.filter(w => /^\d+$/.test(unwrapUnicodeSmallText(w.text).replace(/[^0-9]/g, '')));
     } else if (type === 'PAN' || type === 'IFSC') {
-      result = result.filter(w => /^[a-zA-Z0-9]+$/.test(w.text.replace(/[^a-zA-Z0-9]/g, '')));
+      result = result.filter(w => /^[a-zA-Z0-9]+$/.test(unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '')));
     }
     return result;
   }
@@ -129,7 +164,7 @@
     const triggerWordBoxes = words
       .map((w, idx) => ({ ...w, originalIdx: idx }))
       .filter(w => {
-        const clean = w.text.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const clean = unwrapUnicodeSmallText(w.text).toLowerCase().replace(/[^a-z0-9]/g, '');
         return otpTriggerKeywords.includes(clean);
       });
 
@@ -194,18 +229,23 @@
 
           const joinedSpace = rawSlice.map(w => w.text).join(' ');
           const joinedNone = rawSlice.map(w => w.text).join('');
-          const cleanText = joinedSpace.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
-          const cleanNone = joinedNone.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
+          const unwrappedSpace = unwrapUnicodeSmallText(joinedSpace);
+          const unwrappedNone = unwrapUnicodeSmallText(joinedNone);
+          const cleanText = unwrappedSpace.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
+          const cleanNone = unwrappedNone.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
           const digits = cleanNone.replace(/\D/g, '');
+
+          const prevWord1 = unwrapUnicodeSmallText(line[i - 1]?.text || '');
+          const prevWord2 = unwrapUnicodeSmallText(line[i - 2]?.text || '');
 
           let matchType = null;
           let matchedText = cleanText;
 
-          // 1. EMAIL (Standard, partial, OCR-split, or embedded in token)
+          // 1. EMAIL (Standard, partial, OCR-split, Unicode small-caps, or embedded in token)
           const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i;
           const emailSpacePattern = /[a-zA-Z0-9._%+-]+[\s]*[@©][\s]*[a-zA-Z0-9.-]+[\s]*\.[\s]*[a-zA-Z]{2,}/i;
           const em1 = cleanText.match(emailPattern);
-          const em2 = joinedNone.match(emailPattern);
+          const em2 = cleanNone.match(emailPattern);
           const em3 = cleanText.match(emailSpacePattern);
 
           if (em1 || em2 || em3 || /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/.test(cleanText)) {
@@ -225,13 +265,13 @@
           // 4. PAYMENT CARD (13-19 digits: Luhn validated OR standard card format 4-4-4-4 / 4-6-5 with card prefix/keywords)
           else if (
             digits.length >= 13 && digits.length <= 19 &&
-            !/^(account|acc|wire|phone|tel)/i.test((line[i - 1]?.text || '')) &&
+            !/^(account|acc|wire|phone|tel)/i.test(prevWord1) &&
             (
               luhnCheck(digits) ||
               (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
               (/^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText)) ||
-              (/^(card|visa|mastercard|amex|debit|credit)/i.test((line[i - 1]?.text || ''))) ||
-              (/^(card|visa|mastercard|amex|debit|credit)/i.test((line[i - 2]?.text || '')))
+              (/^(card|visa|mastercard|amex|debit|credit)/i.test(prevWord1)) ||
+              (/^(card|visa|mastercard|amex|debit|credit)/i.test(prevWord2))
             )
           ) {
             matchType = 'CARD';
@@ -241,8 +281,8 @@
           else if (
             digits.length >= 9 && digits.length <= 18 &&
             (
-              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban|routing)/i.test((line[i - 1]?.text || '')) ||
-              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban|routing)/i.test((line[i - 2]?.text || '')) ||
+              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban|routing)/i.test(prevWord1) ||
+              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban|routing)/i.test(prevWord2) ||
               /^(account|acc|a\/c|beneficiary|settlement)/i.test(cleanText) ||
               /^ACCOUNT[\s\:\#]+\d{9,18}$/i.test(cleanText)
             )
@@ -253,7 +293,7 @@
           // 6. PHONE (Indian, US, European (+33, +44, +49), and all international formats)
           else if (
             !/[a-zA-Z]{2,}/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile|hotline|desk|fax):?\s*/i, '')) &&
-            !/^(account|acc|routing|ifsc|pan|otp)/i.test((line[i - 1]?.text || '')) &&
+            !/^(account|acc|routing|ifsc|pan|otp)/i.test(prevWord1) &&
             (
               // International prefix with + (e.g. +33 1 42 68 55 00, +44 20 7946 0919, +1-888-555-0199, +91 98765 43210)
               (/^\+\d{1,4}[\s\-\.]?\(?\d{1,4}\)?([\s\-\.]?\d{1,4}){1,5}$/.test(cleanText) && digits.length >= 7 && digits.length <= 15) ||
@@ -277,8 +317,8 @@
             const isYear = digits.length === 4 && numVal >= 1900 && numVal <= 2099;
             
             // Check context for dates (e.g. Q1-Q4, FY, yr, year, months)
-            const prevWord = (i > 0 && line[i - 1]) ? line[i - 1].text.toLowerCase() : '';
-            const nextWord = (i + winSize < n && line[i + winSize]) ? line[i + winSize].text.toLowerCase() : '';
+            const prevWord = (i > 0 && line[i - 1]) ? unwrapUnicodeSmallText(line[i - 1].text).toLowerCase() : '';
+            const nextWord = (i + winSize < n && line[i + winSize]) ? unwrapUnicodeSmallText(line[i + winSize].text).toLowerCase() : '';
             const isDateContext = /^(q[1-4]|fy|v|ver|version|yr|year|since|est|in|on|of|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i.test(prevWord.replace(/[^a-z0-9]/gi, '')) ||
                                   /^(q[1-4]|fy|yr|year|edition|release)$/i.test(nextWord.replace(/[^a-z0-9]/gi, ''));
 
@@ -684,6 +724,7 @@
     detectPII,
     refineFaceBoundingBoxes,
     generateSanitizedText,
+    unwrapUnicodeSmallText,
     luhnCheck
   };
 }));
