@@ -157,41 +157,62 @@
         const parentId = (el.parentElement?.getAttribute('id') || '').toLowerCase();
         const tagName = el.tagName.toUpperCase();
 
-        // Check if this image element is a genuine user avatar, profile photo, or photo
+        const isLogoOrBrand = 
+          altStr.includes('logo') ||
+          altStr.includes('brand') ||
+          classStr.includes('logo') ||
+          classStr.includes('brand') ||
+          classStr.includes('site-title') ||
+          idStr.includes('logo') ||
+          idStr.includes('brand') ||
+          srcStr.includes('logo') ||
+          srcStr.includes('brand') ||
+          ariaStr.includes('logo') ||
+          ariaStr.includes('home') ||
+          parentClass.includes('logo') ||
+          parentClass.includes('brand') ||
+          parentId.includes('logo') ||
+          parentId.includes('brand');
+
+        if (isLogoOrBrand) {
+          continue; // Skip logos & branding completely
+        }
+
+        // Check if this image element is a genuine user avatar or personal portrait photo
         const isAvatar = 
-          tagName === 'IMG' ||
           srcStr.includes('googleusercontent.com') ||
-          srcStr.includes('avatar') ||
-          srcStr.includes('profile') ||
-          srcStr.includes('user') ||
-          srcStr.includes('photo') ||
-          srcStr.includes('person') ||
-          srcStr.includes('gravatar') ||
+          srcStr.includes('gravatar.com') ||
           srcStr.includes('twimg.com/profile_images') ||
           srcStr.includes('githubusercontent.com/u') ||
-          srcStr.includes('fbcdn') ||
-          srcStr.includes('media') ||
-          srcStr.includes('upload') ||
-          styleStr.includes('background-image') ||
+          srcStr.includes('avatar') ||
+          srcStr.includes('profile_image') ||
+          srcStr.includes('user_photo') ||
+          srcStr.includes('profile-pic') ||
+          srcStr.includes('headshot') ||
           classStr.includes('avatar') ||
-          classStr.includes('profile') ||
-          classStr.includes('user') ||
-          classStr.includes('photo') ||
-          classStr.includes('picture') ||
+          classStr.includes('profile-image') ||
+          classStr.includes('profile-pic') ||
+          classStr.includes('profile-photo') ||
+          classStr.includes('user-avatar') ||
+          classStr.includes('author-image') ||
+          classStr.includes('member-photo') ||
+          classStr.includes('student-photo') ||
           idStr.includes('avatar') ||
-          idStr.includes('profile') ||
-          idStr.includes('photo') ||
+          idStr.includes('profile-pic') ||
+          idStr.includes('profile-photo') ||
+          idStr.includes('student-photo') ||
           parentClass.includes('avatar') ||
-          parentClass.includes('profile') ||
+          parentClass.includes('user-profile') ||
           parentId.includes('avatar') ||
-          parentId.includes('profile') ||
-          altStr.includes('profile') ||
+          altStr.includes('profile photo') ||
           altStr.includes('avatar') ||
-          altStr.includes('account') ||
-          altStr.includes('photo') ||
-          ariaStr.includes('profile') ||
-          ariaStr.includes('avatar') ||
-          ariaStr.includes('account');
+          altStr.includes('user profile') ||
+          altStr.includes('account photo') ||
+          altStr.includes('profile picture') ||
+          ariaStr.includes('profile photo') ||
+          ariaStr.includes('user profile') ||
+          ariaStr.includes('profile picture') ||
+          ariaStr.includes('account of');
 
         if (isAvatar && rect.width >= 24 && rect.height >= 24) {
           words.push({
