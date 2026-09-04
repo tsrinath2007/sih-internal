@@ -360,6 +360,40 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(match.bbox.x).toBe(385);
     expect(match.bbox.width).toBe(269);
   });
+
+  it('does NOT falsely match English phrases or sample document descriptions as CARD', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const sampleDocWords = [
+      { text: 'The', confidence: 90, bbox: { x: 10, y: 10, width: 25, height: 18 } },
+      { text: 'document', confidence: 90, bbox: { x: 40, y: 10, width: 50, height: 18 } },
+      { text: 'is', confidence: 90, bbox: { x: 95, y: 10, width: 15, height: 18 } },
+      { text: 'an', confidence: 90, bbox: { x: 115, y: 10, width: 15, height: 18 } },
+      { text: 'Aadhaar', confidence: 90, bbox: { x: 135, y: 10, width: 50, height: 18 } },
+      { text: 'card', confidence: 90, bbox: { x: 190, y: 10, width: 30, height: 18 } },
+      { text: 'issued', confidence: 90, bbox: { x: 225, y: 10, width: 40, height: 18 } },
+      { text: 'by', confidence: 90, bbox: { x: 270, y: 10, width: 20, height: 18 } },
+      { text: 'the', confidence: 90, bbox: { x: 295, y: 10, width: 25, height: 18 } },
+      { text: 'Unique', confidence: 90, bbox: { x: 325, y: 10, width: 45, height: 18 } },
+      { text: 'Identification', confidence: 90, bbox: { x: 375, y: 10, width: 80, height: 18 } },
+      { text: 'Sign', confidence: 90, bbox: { x: 10, y: 50, width: 30, height: 18 } },
+      { text: 'In', confidence: 90, bbox: { x: 45, y: 50, width: 15, height: 18 } },
+      { text: 'Download', confidence: 90, bbox: { x: 65, y: 50, width: 60, height: 18 } },
+      { text: 'free', confidence: 90, bbox: { x: 130, y: 50, width: 30, height: 18 } },
+      { text: 'for', confidence: 90, bbox: { x: 165, y: 50, width: 20, height: 18 } },
+      { text: '30', confidence: 90, bbox: { x: 190, y: 50, width: 20, height: 18 } },
+      { text: 'days', confidence: 90, bbox: { x: 215, y: 50, width: 30, height: 18 } },
+      { text: 'You', confidence: 90, bbox: { x: 10, y: 90, width: 25, height: 18 } },
+      { text: 'might', confidence: 90, bbox: { x: 40, y: 90, width: 35, height: 18 } },
+      { text: 'also', confidence: 90, bbox: { x: 80, y: 90, width: 30, height: 18 } },
+      { text: 'like', confidence: 90, bbox: { x: 115, y: 90, width: 25, height: 18 } }
+    ];
+
+    const result = PIIDetector.detectPII(sampleDocWords);
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBe(0);
+  });
 });
 
 

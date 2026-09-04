@@ -318,7 +318,8 @@
           const cleanText = unwrappedSpace.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
           const cleanNone = unwrappedNone.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
           const digits = cleanNone.replace(/\D/g, '');
-          const repairedDigits = normalizeOcrCardDigits(cleanNone);
+          const isMostlyNumeric = digits.length >= 10 && cleanNone.length > 0 && (digits.length / cleanNone.length) >= 0.65;
+          const repairedDigits = isMostlyNumeric ? normalizeOcrCardDigits(cleanNone) : '';
 
           const prevWord1 = unwrapUnicodeSmallText(line[i - 1]?.text || '');
           const prevWord2 = unwrapUnicodeSmallText(line[i - 2]?.text || '');
@@ -391,37 +392,46 @@
           }
           // 6. PAYMENT CARD NUMBERS
           else if (
-            !/^(account|acc|wire|phone|tel|ifsc|pan|dob)/i.test(prevWord1) &&
+            !/^(account|acc|wire|phone|tel|ifsc|pan|dob|aadhaar|aadhar)/i.test(prevWord1) &&
             (
-              // 1. Validated Luhn Check (Real Cards)
-              luhnCheck(digits) || (repairedDigits.length >= 13 && repairedDigits.length <= 19 && luhnCheck(repairedDigits)) ||
-              // 2. Standard 16-Digit Card in 4x4 blocks or with standard prefix (2-6)
-              (digits.length === 16 && /^[2-6]/.test(digits)) || (repairedDigits.length === 16 && /^[2-6]/.test(repairedDigits)) ||
+              // 1. Validated Luhn Check on Pure Digits (Real Cards: 13-19 digits)
+              (digits.length >= 13 && digits.length <= 19 && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35|50|58|60|63)/.test(digits) && luhnCheck(digits)) ||
+              // 2. Standard 16-Digit Card in 4x4 blocks or standard prefix (2-6)
+              (digits.length === 16 && /^[2-6]/.test(digits) && /^(\d{4}[\s\-]?){4}$/.test(cleanText.replace(/[^0-9\s\-]/g, ''))) ||
               // 3. Standard 15-Digit Amex (34/37)
-              (digits.length === 15 && /^3[47]/.test(digits)) || (repairedDigits.length === 15 && /^3[47]/.test(repairedDigits)) ||
-              // 4. Formatted 4-Block / 3-Block Card Group (e.g. 5476 7678 9876 5432, S476 7E78 9875 5432)
+              (digits.length === 15 && /^3[47]/.test(digits) && /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText.replace(/[^0-9\s\-]/g, ''))) ||
+              // 4. Formatted 4-Block Noisy Embossed Card (e.g. S476 7E78 9875 5432)
               (
                 rawSlice.length === 4 &&
+                digits.length >= 11 &&
+                cleanNone.length >= 14 && cleanNone.length <= 18 &&
+                (digits.length / cleanNone.length) >= 0.70 &&
+                (repairedDigits.length === 15 || repairedDigits.length === 16) &&
+                /^[2-6]/.test(repairedDigits) &&
                 rawSlice.every(w => {
-                  const t = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
-                  return t.length >= 3 && t.length <= 5 && /[\dSsOoQqDdIlBbZzGgTtEe]/.test(t);
+                  const wt = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
+                  const wd = wt.replace(/\D/g, '');
+                  return wt.length >= 3 && wt.length <= 5 && wd.length >= 2;
                 }) &&
-                (digits.length >= 10 || repairedDigits.length >= 12) &&
                 computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 140
               ) ||
-              // 5. 3-Block Merged Card Group (e.g. S476 7789875 5432)
+              // 5. 3-Block Noisy Embossed Card (e.g. S476 7789875 5432)
               (
                 rawSlice.length === 3 &&
-                rawSlice.every(w => {
-                  const t = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
-                  return t.length >= 3 && t.length <= 9 && /[\dSsOoQqDdIlBbZzGgTtEe]/.test(t);
-                }) &&
-                repairedDigits.length >= 13 &&
+                digits.length >= 11 &&
+                cleanNone.length >= 14 && cleanNone.length <= 18 &&
+                (digits.length / cleanNone.length) >= 0.70 &&
+                (repairedDigits.length === 15 || repairedDigits.length === 16) &&
                 /^[2-6]/.test(repairedDigits) &&
+                rawSlice.every(w => {
+                  const wt = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
+                  const wd = wt.replace(/\D/g, '');
+                  return wt.length >= 3 && wt.length <= 9 && wd.length >= 2;
+                }) &&
                 computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 140
               ) ||
-              // 6. Standard Card Format regex
-              (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
+              // 6. Standard Card Format regex with pure digits
+              (/^(\d{4}[\s\-]?){3}\d{4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
               (/^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText))
             )
           ) {
