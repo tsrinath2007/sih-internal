@@ -408,34 +408,50 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           for (const match of piiDetection.matches) {
             const { x, y, width: bw, height: bh } = match.bbox;
-            const padX = 8;
-            const padY = 5;
+            const isAvatar = match.type === 'AVATAR';
+            const padX = isAvatar ? 4 : 8;
+            const padY = isAvatar ? 4 : 5;
             const rx = Math.max(0, x - padX);
             const ry = Math.max(0, y - padY);
             const rw = bw + padX * 2;
             const rh = Math.max(22, bh + padY * 2);
 
-            // Step A: Gaussian Frosted Blur on the underlying pixels
+            // Step A: Multi-Pass Frosted Gaussian Blur on the underlying image
             sCtx.save();
             sCtx.beginPath();
             sCtx.rect(rx, ry, rw, rh);
             sCtx.clip();
-            sCtx.filter = 'blur(16px)';
-            sCtx.drawImage(img, 0, 0);
+
+            // 1. Pixel downscale-upscale blur (100% works across all canvas renderers)
+            const off = document.createElement('canvas');
+            const scaleF = 0.08;
+            off.width = Math.max(2, Math.round(rw * scaleF));
+            off.height = Math.max(2, Math.round(rh * scaleF));
+            const oCtx = off.getContext('2d');
+            oCtx.drawImage(img, rx, ry, rw, rh, 0, 0, off.width, off.height);
+            sCtx.imageSmoothingEnabled = true;
+            sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
+
+            // 2. Native Canvas blur pass
+            try {
+              sCtx.filter = 'blur(10px)';
+              sCtx.drawImage(img, 0, 0);
+            } catch (e) {}
+
             sCtx.restore();
 
-            // Step B: Frosted Dark Privacy Glass Tint
-            sCtx.fillStyle = match.type === 'AVATAR' ? 'rgba(15, 23, 42, 0.78)' : 'rgba(3, 7, 18, 0.84)';
+            // Step B: Frosted Privacy Glass Tint Overlay (Semi-translucent so the blur effect is clearly visible)
+            sCtx.fillStyle = isAvatar ? 'rgba(15, 23, 42, 0.50)' : 'rgba(3, 7, 18, 0.72)';
             sCtx.fillRect(rx, ry, rw, rh);
 
             // Step C: Sharp High-Contrast Highlight Border
-            const strokeColor = match.isLowConfidence ? '#f43f5e' : (match.type === 'AVATAR' ? '#a855f7' : '#00f2fe');
+            const strokeColor = match.isLowConfidence ? '#f43f5e' : (isAvatar ? '#a855f7' : '#00f2fe');
             sCtx.strokeStyle = strokeColor;
             sCtx.lineWidth = 2;
             sCtx.strokeRect(rx, ry, rw, rh);
 
             // Step D: Bold Monospace Centered Label
-            const labelText = match.type === 'AVATAR' ? '[BLURRED AVATAR]' : `[REDACTED ${match.type}]`;
+            const labelText = isAvatar ? '[BLURRED AVATAR]' : `[REDACTED ${match.type}]`;
             const fontSize = Math.max(11, Math.min(14, Math.round(rh * 0.52)));
             sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
             sCtx.textAlign = 'center';

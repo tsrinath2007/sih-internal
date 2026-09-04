@@ -141,33 +141,47 @@
     }
 
     // Auto-detect User Avatars, Profile Pictures, and Circular Face Photos for Anonymization
-    const avatarCandidates = document.querySelectorAll('img, [role="img"], svg.avatar, .avatar, .profile-pic, .user-avatar, [class*="avatar"], [class*="profile-photo"]');
+    const avatarCandidates = document.querySelectorAll('img, image, [role="img"], [style*="background-image"], .gb_c, .gb_d, .avatar, [class*="avatar" i], [class*="profile" i]');
     for (const el of avatarCandidates) {
       if (el.id === 'parallax-topbar-iframe') continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.width >= 20 && rect.width <= 160 && rect.height >= 20 && rect.height <= 160 && rect.bottom > 0 && rect.top < window.innerHeight) {
-        const isSquareOrRound = Math.abs(rect.width - rect.height) <= 20;
-        const className = (el.className || '').toString().toLowerCase();
-        const src = (el.src || '').toLowerCase();
-        const isAvatar = isSquareOrRound && (
-          className.includes('avatar') || 
-          className.includes('profile') || 
-          className.includes('user') ||
-          className.includes('account') ||
-          src.includes('avatar') || 
-          src.includes('photo') || 
-          src.includes('googleusercontent') ||
-          src.includes('profile') ||
-          el.getAttribute('role') === 'img' ||
-          window.getComputedStyle(el).borderRadius.includes('50%') ||
-          window.getComputedStyle(el).borderRadius.includes('9999px')
-        );
+
+      // If element is a container/button, target the actual inner <img> directly if present
+      const realImg = (el.tagName === 'IMG' || el.tagName === 'image') ? el : el.querySelector('img, image');
+      const targetEl = realImg || el;
+
+      const rect = targetEl.getBoundingClientRect();
+      if (rect.width >= 24 && rect.width <= 180 && rect.height >= 24 && rect.height <= 180 && rect.bottom > 0 && rect.top < window.innerHeight) {
+        const classStr = (targetEl.getAttribute('class') || targetEl.className?.baseVal || targetEl.className || '').toString().toLowerCase();
+        const srcStr = (targetEl.getAttribute('src') || targetEl.getAttribute('href') || targetEl.getAttribute('xlink:href') || targetEl.src || '').toLowerCase();
+        const styleStr = (targetEl.getAttribute('style') || '').toLowerCase();
+        const altStr = (targetEl.getAttribute('alt') || '').toLowerCase();
+        const ariaStr = (targetEl.getAttribute('aria-label') || targetEl.parentElement?.getAttribute('aria-label') || '').toLowerCase();
+
+        // Check if this is a genuine user avatar / profile photo
+        const isAvatar = 
+          srcStr.includes('googleusercontent.com') ||
+          srcStr.includes('avatar') ||
+          srcStr.includes('profile') ||
+          srcStr.includes('user') ||
+          srcStr.includes('photo') ||
+          srcStr.includes('gravatar') ||
+          srcStr.includes('twimg.com/profile_images') ||
+          srcStr.includes('githubusercontent.com/u') ||
+          styleStr.includes('googleusercontent') ||
+          classStr.includes('avatar') ||
+          classStr.includes('profile-pic') ||
+          classStr.includes('user-avatar') ||
+          altStr.includes('profile') ||
+          altStr.includes('avatar') ||
+          altStr.includes('account') ||
+          ariaStr.includes('google account') ||
+          ariaStr.includes('profile photo');
 
         if (isAvatar) {
           words.push({
             text: '[PHOTO_AVATAR]',
             isAvatar: true,
-            confidence: 98,
+            confidence: 99,
             bbox: {
               x: Math.round(rect.left),
               y: Math.round(rect.top),
