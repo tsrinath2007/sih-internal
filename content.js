@@ -102,6 +102,15 @@
       const rect = inp.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
         const isTextarea = inp.tagName === 'TEXTAREA';
+        const typeStr = (inp.getAttribute('type') || inp.type || '').toLowerCase();
+        const nameStr = (inp.getAttribute('name') || inp.name || '').toLowerCase();
+        const idStr = (inp.getAttribute('id') || inp.id || '').toLowerCase();
+        const autoStr = (inp.getAttribute('autocomplete') || inp.autocomplete || '').toLowerCase();
+        const placeStr = (inp.getAttribute('placeholder') || inp.placeholder || '').toLowerCase();
+
+        const isPassword = typeStr === 'password' || nameStr.includes('password') || nameStr.includes('passwd') || nameStr.includes('pwd') || idStr.includes('password') || autoStr.includes('password') || placeStr.includes('password');
+        const isSecret = nameStr.includes('secret') || nameStr.includes('token') || nameStr.includes('apikey') || nameStr.includes('api_key') || idStr.includes('token') || idStr.includes('secret');
+
         const computed = window.getComputedStyle(inp);
         const padLeft = parseFloat(computed.paddingLeft) || 8;
         const padTop = parseFloat(computed.paddingTop) || 6;
@@ -124,6 +133,8 @@
               const pw = Math.min(rect.width - padLeft * 2, Math.max(16, p.length * (fontSize * 0.62)));
               words.push({
                 text: p,
+                isPassword: isPassword,
+                isSecret: isSecret,
                 confidence: 99,
                 bbox: {
                   x: Math.round(currX),
@@ -148,6 +159,8 @@
             const pw = Math.min(rect.width - padLeft * 2, Math.max(16, p.length * (fontSize * 0.62)));
             words.push({
               text: p,
+              isPassword: isPassword,
+              isSecret: isSecret,
               confidence: 99,
               bbox: {
                 x: Math.round(currX),

@@ -247,6 +247,25 @@ describe('PIIDetectorDOM Unit Tests', () => {
     const result = PIIDetector.detectPII(loginUiWords);
     expect(result.matches.length).toBe(0);
   });
+
+  it('redacts sensitive password and credential input fields', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const formWords = [
+      { text: 'USERNAME:', confidence: 99, bbox: { x: 50, y: 50, width: 60, height: 16 } },
+      { text: 'alex_user', confidence: 99, bbox: { x: 120, y: 50, width: 60, height: 16 } },
+      { text: 'PASSWORD:', confidence: 99, bbox: { x: 50, y: 100, width: 60, height: 16 } },
+      { text: 'SRINATHHH', isPassword: true, confidence: 99, bbox: { x: 120, y: 100, width: 70, height: 16 } }
+    ];
+
+    const result = PIIDetector.detectPII(formWords);
+    expect(result.matches.length).toBe(1);
+
+    const pwdMatch = result.matches.find((m: any) => m.type === 'PASSWORD');
+    expect(pwdMatch).toBeDefined();
+    expect(pwdMatch.matchedText).toBe('SRINATHHH');
+  });
 });
 
 

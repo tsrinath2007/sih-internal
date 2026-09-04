@@ -293,6 +293,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const scaledDomWords = domWords.map(w => ({
           text: w.text,
           isAvatar: w.isAvatar,
+          isPassword: w.isPassword,
+          isSecret: w.isSecret,
           confidence: w.confidence || 99,
           bbox: {
             x: Math.round(w.bbox.x * scaleX),

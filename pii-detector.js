@@ -183,6 +183,11 @@
         result.pop();
       }
       result = result.filter(w => /[\d\/\-\.]/.test(unwrapUnicodeSmallText(w.text)));
+    } else if (type === 'PASSWORD') {
+      while (result.length > 1 && /^(password|passwd|pwd|passcode|secret|api_key|token)[\s\:\-]*$/i.test(unwrapUnicodeSmallText(result[0].text))) {
+        result.shift();
+      }
+      return result;
     } else if (type === 'OTP' || type === 'ACCOUNT_NUM') {
       result = result.filter(w => /^\d+$/.test(unwrapUnicodeSmallText(w.text).replace(/[^0-9]/g, '')));
     } else if (type === 'PAN' || type === 'IFSC' || type === 'PASSPORT' || type === 'VOTER_ID') {
@@ -286,18 +291,25 @@
 
           const prevWord1 = unwrapUnicodeSmallText(line[i - 1]?.text || '');
           const prevWord2 = unwrapUnicodeSmallText(line[i - 2]?.text || '');
-
           let matchType = null;
           let matchedText = cleanText;
 
-          // 1. EMAIL (Standard, partial, OCR-split, Unicode small-caps, or embedded in token)
           const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i;
           const emailSpacePattern = /[a-zA-Z0-9._%+-]+[\s]*[@©][\s]*[a-zA-Z0-9.-]+[\s]*\.[\s]*[a-zA-Z]{2,}/i;
           const em1 = cleanText.match(emailPattern);
           const em2 = cleanNone.match(emailPattern);
           const em3 = cleanText.match(emailSpacePattern);
 
-          if (em1 || em2 || em3 || /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/.test(cleanText)) {
+          // 0. PASSWORD & SENSITIVE CREDENTIAL FIELDS
+          if (
+            rawSlice.some(w => w.isPassword || w.isSecret) ||
+            /^(password|passwd|pwd|passcode|secret|api_key|token)[\s\:\-]+$/i.test(prevWord1)
+          ) {
+            matchType = 'PASSWORD';
+            matchedText = joinedSpace;
+          }
+          // 1. EMAIL (Standard, partial, OCR-split, Unicode small-caps, or embedded in token)
+          else if (em1 || em2 || em3 || /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/.test(cleanText)) {
             matchType = 'EMAIL';
             matchedText = (em1 ? em1[0] : (em2 ? em2[0] : (em3 ? em3[0] : cleanText)));
           }
@@ -536,6 +548,7 @@
       PHONE: dedupedMatches.filter(m => m.type === 'PHONE').length,
       OTP: dedupedMatches.filter(m => m.type === 'OTP').length,
       CARD: dedupedMatches.filter(m => m.type === 'CARD').length,
+      PASSWORD: dedupedMatches.filter(m => m.type === 'PASSWORD').length,
       AVATAR: dedupedMatches.filter(m => m.type === 'AVATAR').length,
       AADHAAR: dedupedMatches.filter(m => m.type === 'AADHAAR').length,
       PAN: dedupedMatches.filter(m => m.type === 'PAN').length,
@@ -926,11 +939,11 @@
             const density = count / Math.max(1, boxArea);
 
             if (
-              count >= 40 &&
-              ratio >= 0.75 && ratio <= 1.90 &&
-              cw >= 14 && ch >= 16 &&
-              cw <= sampleW * 0.60 && ch <= sampleH * 0.60 &&
-              density >= 0.28 && density <= 0.95
+              count >= 50 &&
+              ratio >= 0.80 && ratio <= 1.80 &&
+              cw >= 16 && ch >= 18 &&
+              cw <= sampleW * 0.35 && ch <= sampleH * 0.38 &&
+              density >= 0.32 && density <= 0.90
             ) {
               clusters.push({ minX, maxX, minY, maxY, cw, ch, count, ratio });
             }
