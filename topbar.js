@@ -85,28 +85,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, '*');
   }
 
-  // Pre-warm Persistent WASM Worker in background
+  // Pre-warm Persistent WASM Worker in background with auto-recovery
   async function getPersistentWorker() {
     if (cachedWorker) return cachedWorker;
     if (isWorkerInitializing) {
-      while (isWorkerInitializing) {
+      let waitCount = 0;
+      while (isWorkerInitializing && waitCount < 30) {
         await new Promise((r) => setTimeout(r, 50));
+        waitCount++;
       }
       if (cachedWorker) return cachedWorker;
     }
 
     isWorkerInitializing = true;
     try {
-      cachedWorker = await Tesseract.createWorker('eng', 1, {
-        workerPath: chrome.runtime.getURL('lib/worker.min.js'),
-        corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js'),
-        langPath: chrome.runtime.getURL('lib/lang-data'),
-        workerBlobURL: false,
-        gzip: true
-      });
-      console.log('⚡ [Parallax] WASM OCR Engine warmed in memory.');
+      if (typeof Tesseract !== 'undefined') {
+        cachedWorker = await Tesseract.createWorker('eng', 1, {
+          workerPath: chrome.runtime.getURL('lib/worker.min.js'),
+          corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js'),
+          langPath: chrome.runtime.getURL('lib/lang-data'),
+          workerBlobURL: false,
+          gzip: true
+        });
+        console.log('⚡ [Parallax] WASM OCR Engine warmed in memory.');
+      }
     } catch (err) {
-      console.error('[Parallax] Worker init error:', err);
+      console.warn('[Parallax] Worker init warning (DOM fallback active):', err);
+      cachedWorker = null;
     } finally {
       isWorkerInitializing = false;
     }
@@ -328,27 +333,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       // High-Speed Downscaled OCR Pre-processing
       const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
 
-      const worker = await getPersistentWorker();
-      if (!worker) throw new Error('WASM Worker failed to initialize');
-
-      const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
-        text: true,
-        blocks: true
-      });
-
       let rawWords = [];
-      if (ocrResult.data && Array.isArray(ocrResult.data.words) && ocrResult.data.words.length > 0) {
-        rawWords = ocrResult.data.words;
-      } else if (ocrResult.data && Array.isArray(ocrResult.data.blocks)) {
-        for (const block of ocrResult.data.blocks) {
-          for (const p of (block.paragraphs || [])) {
-            for (const line of (p.lines || [])) {
-              for (const w of (line.words || [])) {
-                rawWords.push(w);
+      try {
+        const worker = await getPersistentWorker();
+        if (worker) {
+          const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
+            text: true,
+            blocks: true
+          });
+
+          if (ocrResult.data && Array.isArray(ocrResult.data.words) && ocrResult.data.words.length > 0) {
+            rawWords = ocrResult.data.words;
+          } else if (ocrResult.data && Array.isArray(ocrResult.data.blocks)) {
+            for (const block of ocrResult.data.blocks) {
+              for (const p of (block.paragraphs || [])) {
+                for (const line of (p.lines || [])) {
+                  for (const w of (line.words || [])) {
+                    rawWords.push(w);
+                  }
+                }
               }
             }
           }
         }
+      } catch (ocrErr) {
+        console.warn('[Parallax] OCR perception fallback to DOM spatial extractor:', ocrErr);
       }
 
       const scaleMult = optimizedImage.scale;
