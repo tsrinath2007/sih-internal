@@ -177,6 +177,48 @@ describe('PIIDetectorDOM Unit Tests', () => {
     const phoneMatch = result.matches.find((m: any) => m.type === 'PHONE');
     expect(phoneMatch).toBeDefined();
   });
+
+  it('accurately detects Aadhaar numbers, DOB, and rejects IFSC false positives on regular text', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    // Verhoeff Aadhaar validation
+    expect(PIIDetector.validateAadhaar('7730 0889 2163')).toBe(true);
+    expect(PIIDetector.validateAadhaar('773008892163')).toBe(true);
+    expect(PIIDetector.validateAadhaar('123456789012')).toBe(false);
+
+    // Test words from Aadhaar sample document
+    const aadhaarDocWords = [
+      { text: 'The', confidence: 95, bbox: { x: 50, y: 50, width: 30, height: 16 } },
+      { text: 'document', confidence: 95, bbox: { x: 85, y: 50, width: 70, height: 16 } },
+      { text: 'Authority', confidence: 95, bbox: { x: 50, y: 100, width: 65, height: 16 } },
+      { text: 'of', confidence: 95, bbox: { x: 120, y: 100, width: 20, height: 16 } },
+      { text: 'DOB:', confidence: 95, bbox: { x: 50, y: 150, width: 40, height: 16 } },
+      { text: '30/05/1995', confidence: 98, bbox: { x: 95, y: 150, width: 85, height: 16 } },
+      { text: '7730', confidence: 98, bbox: { x: 50, y: 200, width: 40, height: 16 } },
+      { text: '0889', confidence: 98, bbox: { x: 95, y: 200, width: 40, height: 16 } },
+      { text: '2163', confidence: 98, bbox: { x: 140, y: 200, width: 40, height: 16 } },
+      { text: 'IFSC:', confidence: 95, bbox: { x: 50, y: 250, width: 40, height: 16 } },
+      { text: 'SBIN0001234', confidence: 98, bbox: { x: 95, y: 250, width: 100, height: 16 } }
+    ];
+
+    const result = PIIDetector.detectPII(aadhaarDocWords);
+    
+    // Should NOT have false IFSC matches for "The document" or "Authority of"
+    const ifscMatches = result.matches.filter((m: any) => m.type === 'IFSC');
+    expect(ifscMatches.length).toBe(1);
+    expect(ifscMatches[0].matchedText).toBe('SBIN0001234');
+
+    // Should detect DOB: 30/05/1995
+    const dobMatch = result.matches.find((m: any) => m.type === 'DOB');
+    expect(dobMatch).toBeDefined();
+    expect(dobMatch.matchedText).toBe('30/05/1995');
+
+    // Should detect Aadhaar: 7730 0889 2163
+    const aadhaarMatch = result.matches.find((m: any) => m.type === 'AADHAAR');
+    expect(aadhaarMatch).toBeDefined();
+    expect(aadhaarMatch.matchedText).toBe('7730 0889 2163');
+  });
 });
 
 

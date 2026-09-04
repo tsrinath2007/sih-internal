@@ -44,6 +44,47 @@
   }
 
   /**
+   * Verhoeff algorithm multiplication and permutation tables for Aadhaar checksum validation
+   */
+  const VERHOEFF_D = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+    [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+    [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+    [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+    [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+    [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+    [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+  ];
+  const VERHOEFF_P = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+    [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+    [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+    [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+    [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]
+  ];
+
+  /**
+   * Validate Indian Aadhaar 12-digit number using Verhoeff algorithm
+   */
+  function validateAadhaar(numStr) {
+    const digits = unwrapUnicodeSmallText(numStr || '').replace(/\D/g, '');
+    if (digits.length !== 12) return false;
+    if (/^[01]/.test(digits)) return false; // Aadhaar numbers never start with 0 or 1
+    let c = 0;
+    const invertedArray = digits.split('').map(Number).reverse();
+    for (let i = 0; i < invertedArray.length; i++) {
+      c = VERHOEFF_D[c][VERHOEFF_P[i % 8][invertedArray[i]]];
+    }
+    return c === 0;
+  }
+
+  /**
    * Luhn algorithm validation for payment card numbers
    */
   function luhnCheck(numStr) {
@@ -118,7 +159,7 @@
       } else {
         result = result.filter(w => /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(unwrapUnicodeSmallText(w.text)));
       }
-    } else if (type === 'CARD') {
+    } else if (type === 'CARD' || type === 'AADHAAR') {
       while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[0].text))) {
         result.shift();
       }
@@ -134,9 +175,17 @@
         result.pop();
       }
       result = result.filter(w => /[\d+\-\(\)\.]/.test(unwrapUnicodeSmallText(w.text)));
+    } else if (type === 'DOB') {
+      while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[0].text))) {
+        result.shift();
+      }
+      while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[result.length - 1].text))) {
+        result.pop();
+      }
+      result = result.filter(w => /[\d\/\-\.]/.test(unwrapUnicodeSmallText(w.text)));
     } else if (type === 'OTP' || type === 'ACCOUNT_NUM') {
       result = result.filter(w => /^\d+$/.test(unwrapUnicodeSmallText(w.text).replace(/[^0-9]/g, '')));
-    } else if (type === 'PAN' || type === 'IFSC') {
+    } else if (type === 'PAN' || type === 'IFSC' || type === 'PASSPORT' || type === 'VOTER_ID') {
       result = result.filter(w => /^[a-zA-Z0-9]+$/.test(unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '')));
     }
     return result;
@@ -252,17 +301,52 @@
             matchType = 'EMAIL';
             matchedText = (em1 ? em1[0] : (em2 ? em2[0] : (em3 ? em3[0] : cleanText)));
           }
-          // 2. INDIAN PAN CARD (5 letters, 4 digits, 1 letter e.g. ABCDE1234F, XYZPQ9876R)
-          else if (/^[a-zA-Z]{5}[0-9]{4}[a-zA-Z]$/i.test(cleanNone)) {
+          // 2. INDIAN AADHAAR CARD (12 digits e.g. 7730 0889 2163, 7730-0889-2163, or 12-digits with Verhoeff/context)
+          else if (
+            digits.length === 12 &&
+            !/^[01]/.test(digits) &&
+            !/^(account|acc|card|visa|mastercard|wire)/i.test(prevWord1) &&
+            (
+              /^[2-9]\d{3}[\s\-]\d{4}[\s\-]\d{4}$/.test(cleanText) ||
+              validateAadhaar(digits) ||
+              /^(aadhaar|aadhar|uid|uidai|आधार)/i.test(prevWord1) ||
+              /^(aadhaar|aadhar|uid|uidai|आधार)/i.test(prevWord2)
+            )
+          ) {
+            matchType = 'AADHAAR';
+            matchedText = joinedSpace;
+          }
+          // 3. DATE OF BIRTH / DOB (e.g. 30/05/1995, 1995-05-30, DOB: 30/05/1995)
+          else if (
+            /^(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})$/.test(cleanText) &&
+            (
+              /^(dob|d\.o\.b|birth|birthday|born|जन्म|तारीख|जन्मतारीख)/i.test(prevWord1) ||
+              /^(dob|d\.o\.b|birth|birthday|born|जन्म|तारीख|जन्मतारीख)/i.test(prevWord2) ||
+              /^(dob|date of birth|birth date|d\.o\.b|born)[\s\:\-]+/i.test(joinedSpace)
+            )
+          ) {
+            matchType = 'DOB';
+            matchedText = cleanText;
+          }
+          // 4. INDIAN PAN CARD (5 letters, 4 digits, 1 letter e.g. ABCDE1234F, XYZPQ9876R)
+          else if (
+            /^[a-zA-Z]{5}[0-9]{4}[a-zA-Z]$/i.test(cleanNone) &&
+            (rawSlice.length === 1 || /^(pan|pancard|pan_no)/i.test(prevWord1) || /^(pan|pancard|pan_no)/i.test(prevWord2))
+          ) {
             matchType = 'PAN';
             matchedText = cleanNone.toUpperCase();
           }
-          // 3. BANK IFSC CODE (4 letters, 0, 6 alphanumeric e.g. HDFC0001234, SBIN0001234)
-          else if (/^[a-zA-Z]{4}[0oO][a-zA-Z0-9]{6}$/i.test(cleanNone)) {
+          // 5. BANK IFSC CODE (4 letters, 0, 6 alphanumeric e.g. HDFC0001234, SBIN0001234)
+          // Strictly requires 5th char to be 0 (Zero) and branch to contain digits or explicit IFSC context
+          else if (
+            /^[a-zA-Z]{4}0[a-zA-Z0-9]{6}$/i.test(cleanNone) &&
+            (rawSlice.length === 1 || /^(ifsc|ifsc_code|branch_code|rtgs|neft|imps)/i.test(prevWord1) || /^(ifsc|ifsc_code|branch_code|rtgs|neft|imps)/i.test(prevWord2)) &&
+            (/\d/.test(cleanNone.slice(5)) || /^(ifsc|ifsc_code|branch_code|rtgs|neft|imps)/i.test(prevWord1) || /^(ifsc|ifsc_code|branch_code|rtgs|neft|imps)/i.test(prevWord2))
+          ) {
             matchType = 'IFSC';
             matchedText = cleanNone.toUpperCase();
           }
-          // 4. PAYMENT CARD (13-19 digits: Luhn validated OR standard card format 4-4-4-4 / 4-6-5 with card prefix/keywords)
+          // 6. PAYMENT CARD (13-19 digits: Luhn validated OR standard card format 4-4-4-4 / 4-6-5 with card prefix/keywords)
           else if (
             digits.length >= 13 && digits.length <= 19 &&
             !/^(account|acc|wire|phone|tel)/i.test(prevWord1) &&
@@ -277,7 +361,7 @@
             matchType = 'CARD';
             matchedText = joinedSpace;
           }
-          // 5. BANK ACCOUNT NUMBERS (9-18 digits preceded by Account, Acc, A/C, Wire, Beneficiary, Settlement keywords)
+          // 7. BANK ACCOUNT NUMBERS (9-18 digits preceded by Account, Acc, A/C, Wire, Beneficiary, Settlement keywords)
           else if (
             digits.length >= 9 && digits.length <= 18 &&
             (
@@ -290,7 +374,22 @@
             matchType = 'ACCOUNT_NUM';
             matchedText = joinedSpace;
           }
-          // 6. PHONE (Indian, US, European (+33, +44, +49), and all international formats)
+          // 8. PASSPORT & VOTER ID (Indian & International)
+          else if (
+            (/^(passport|ppt)/i.test(prevWord1) || /^(passport|ppt)/i.test(prevWord2)) &&
+            /^[a-zA-Z][0-9]{7}$/.test(cleanNone)
+          ) {
+            matchType = 'PASSPORT';
+            matchedText = cleanNone.toUpperCase();
+          }
+          else if (
+            (/^(voter|epic|election)/i.test(prevWord1) || /^(voter|epic)/i.test(prevWord2)) &&
+            /^[a-zA-Z]{3}[0-9]{7}$/.test(cleanNone)
+          ) {
+            matchType = 'VOTER_ID';
+            matchedText = cleanNone.toUpperCase();
+          }
+          // 9. PHONE (Indian, US, European (+33, +44, +49), and all international formats)
           else if (
             !/[a-zA-Z]{2,}/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile|hotline|desk|fax):?\s*/i, '')) &&
             !/^(account|acc|routing|ifsc|pan|otp)/i.test(prevWord1) &&
@@ -311,7 +410,7 @@
             matchType = 'PHONE';
             matchedText = joinedSpace;
           }
-          // 7. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP, excluding calendar years)
+          // 10. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP, excluding calendar years)
           else if (/^\d{4,8}$/.test(cleanText)) {
             const numVal = parseInt(digits, 10);
             const isYear = digits.length === 4 && numVal >= 1900 && numVal <= 2099;
@@ -435,8 +534,12 @@
       OTP: dedupedMatches.filter(m => m.type === 'OTP').length,
       CARD: dedupedMatches.filter(m => m.type === 'CARD').length,
       AVATAR: dedupedMatches.filter(m => m.type === 'AVATAR').length,
+      AADHAAR: dedupedMatches.filter(m => m.type === 'AADHAAR').length,
       PAN: dedupedMatches.filter(m => m.type === 'PAN').length,
       IFSC: dedupedMatches.filter(m => m.type === 'IFSC').length,
+      DOB: dedupedMatches.filter(m => m.type === 'DOB').length,
+      PASSPORT: dedupedMatches.filter(m => m.type === 'PASSPORT').length,
+      VOTER_ID: dedupedMatches.filter(m => m.type === 'VOTER_ID').length,
       ACCOUNT_NUM: dedupedMatches.filter(m => m.type === 'ACCOUNT_NUM').length,
       lowConfidenceCount: dedupedMatches.filter(m => m.isLowConfidence).length
     };
@@ -720,11 +823,160 @@
     return matches;
   }
 
+  /**
+   * Scans a full screenshot/document canvas to detect human face photos (e.g. in Aadhaar/Passports/ID cards/Badges)
+   */
+  function detectVisualFaces(img, canvasW, canvasH) {
+    if (!img || typeof document === 'undefined') return [];
+    try {
+      const maxDim = 360;
+      let sampleW = canvasW;
+      let sampleH = canvasH;
+      if (sampleW > maxDim || sampleH > maxDim) {
+        if (sampleW > sampleH) {
+          sampleH = Math.round((sampleH / sampleW) * maxDim);
+          sampleW = maxDim;
+        } else {
+          sampleW = Math.round((sampleW / sampleH) * maxDim);
+          sampleH = maxDim;
+        }
+      }
+      sampleW = Math.max(80, sampleW);
+      sampleH = Math.max(80, sampleH);
+
+      const off = document.createElement('canvas');
+      off.width = sampleW;
+      off.height = sampleH;
+      const oCtx = off.getContext('2d', { willReadFrequently: true });
+      oCtx.drawImage(img, 0, 0, sampleW, sampleH);
+
+      const imgData = oCtx.getImageData(0, 0, sampleW, sampleH);
+      const data = imgData.data;
+      const skinMap = new Uint8Array(sampleW * sampleH);
+
+      for (let sy = 0; sy < sampleH; sy++) {
+        for (let sx = 0; sx < sampleW; sx++) {
+          const idx = (sy * sampleW + sx) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+
+          const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+          const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+
+          const isSkin = (
+            cb >= 80 && cb <= 126 &&
+            cr >= 133 && cr <= 174 &&
+            r > 70 && g > 40 && b > 25 &&
+            (r - g) >= 8 && (r - g) <= 75 &&
+            (r - b) >= 12
+          );
+
+          if (isSkin) {
+            skinMap[sy * sampleW + sx] = 1;
+          }
+        }
+      }
+
+      const visited = new Uint8Array(sampleW * sampleH);
+      const clusters = [];
+
+      for (let cy = 0; cy < sampleH; cy++) {
+        for (let cx = 0; cx < sampleW; cx++) {
+          const idx = cy * sampleW + cx;
+          if (skinMap[idx] && !visited[idx]) {
+            let count = 0;
+            let minX = cx, maxX = cx, minY = cy, maxY = cy;
+            const queue = [cx, cy];
+            visited[idx] = 1;
+
+            let qHead = 0;
+            while (qHead < queue.length) {
+              const qx = queue[qHead++];
+              const qy = queue[qHead++];
+              count++;
+
+              if (qx < minX) minX = qx;
+              if (qx > maxX) maxX = qx;
+              if (qy < minY) minY = qy;
+              if (qy > maxY) maxY = qy;
+
+              const neighbors = [
+                [qx + 1, qy], [qx - 1, qy], [qx, qy + 1], [qx, qy - 1],
+                [qx + 2, qy], [qx - 2, qy], [qx, qy + 2], [qx, qy - 2]
+              ];
+              for (const [nx, ny] of neighbors) {
+                if (nx >= 0 && nx < sampleW && ny >= 0 && ny < sampleH) {
+                  const nIdx = ny * sampleW + nx;
+                  if (skinMap[nIdx] && !visited[nIdx]) {
+                    visited[nIdx] = 1;
+                    queue.push(nx, ny);
+                  }
+                }
+              }
+            }
+
+            const cw = maxX - minX + 1;
+            const ch = maxY - minY + 1;
+            const ratio = ch / Math.max(1, cw);
+            const boxArea = cw * ch;
+            const density = count / Math.max(1, boxArea);
+
+            if (
+              count >= 40 &&
+              ratio >= 0.75 && ratio <= 1.90 &&
+              cw >= 14 && ch >= 16 &&
+              cw <= sampleW * 0.60 && ch <= sampleH * 0.60 &&
+              density >= 0.28 && density <= 0.95
+            ) {
+              clusters.push({ minX, maxX, minY, maxY, cw, ch, count, ratio });
+            }
+          }
+        }
+      }
+
+      const scaleX = canvasW / sampleW;
+      const scaleY = canvasH / sampleH;
+      const faceMatches = [];
+
+      for (const best of clusters) {
+        const padX = Math.round(best.cw * 0.12);
+        const padYTop = Math.round(best.ch * 0.18);
+        const padYBottom = Math.round(best.ch * 0.10);
+
+        const relX = Math.max(0, best.minX - padX);
+        const relY = Math.max(0, best.minY - padYTop);
+        const relW = Math.min(sampleW - relX, best.cw + padX * 2);
+        const relH = Math.min(sampleH - relY, best.ch + padYTop + padYBottom);
+
+        faceMatches.push({
+          type: 'AVATAR',
+          bbox: {
+            x: Math.round(relX * scaleX),
+            y: Math.round(relY * scaleY),
+            width: Math.round(relW * scaleX),
+            height: Math.round(relH * scaleY)
+          },
+          confidence: 96.0,
+          matchedText: 'User Face Photo',
+          wordIndices: [],
+          isLowConfidence: false
+        });
+      }
+
+      return faceMatches;
+    } catch (e) {
+      return [];
+    }
+  }
+
   return {
     detectPII,
+    detectVisualFaces,
     refineFaceBoundingBoxes,
     generateSanitizedText,
     unwrapUnicodeSmallText,
+    validateAadhaar,
     luhnCheck
   };
 }));

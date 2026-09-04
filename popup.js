@@ -317,6 +317,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
+
+        // Detect any visual face portraits in document/screenshot image (e.g. Aadhaar cards, ID badges)
+        if (typeof PIIDetector.detectVisualFaces === 'function') {
+          const visualFaces = PIIDetector.detectVisualFaces(img, width, height);
+          for (const vf of visualFaces) {
+            const alreadyMatched = piiDetection.matches.some(m => {
+              if (m.type !== 'AVATAR') return false;
+              const dx = Math.abs((m.bbox.x + m.bbox.width / 2) - (vf.bbox.x + vf.bbox.width / 2));
+              const dy = Math.abs((m.bbox.y + m.bbox.height / 2) - (vf.bbox.y + vf.bbox.height / 2));
+              return dx < 60 && dy < 60;
+            });
+            if (!alreadyMatched) {
+              piiDetection.matches.push(vf);
+            }
+          }
+        }
         
         // Pinpoint exact face regions for any photographic avatar matches
         if (typeof PIIDetector.refineFaceBoundingBoxes === 'function') {
