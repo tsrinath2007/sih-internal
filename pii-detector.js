@@ -400,9 +400,10 @@
   }
 
   /**
-   * Refines avatar / photo bounding boxes to pinpoint the exact face region
-   * For small avatars (<= 120px), keeps the tight icon circle.
-   * For larger photos/portraits/webcam shots, locates the face oval via skin cluster & facial geometry
+   * Refines avatar / photo bounding boxes to pinpoint ONLY the face region
+   * For small avatars (<= 110px), keeps the tight icon crop.
+   * For larger photos/portraits/webcams, uses multi-scale sliding-window facial localization
+   * to tightly bound only the eyes, nose, mouth & cheeks (ignoring laptop, background, and body).
    */
   function refineFaceBoundingBoxes(matches, img, canvasW, canvasH) {
     if (!matches || !Array.isArray(matches) || !img) return matches;
@@ -411,8 +412,8 @@
       if (match.type !== 'AVATAR') continue;
 
       const { x, y, width: bw, height: bh } = match.bbox;
-      // If it's already a small circular/square avatar icon (<= 120px), keep the exact badge
-      if (bw <= 120 && bh <= 120) continue;
+      // If it's already a small circular/square avatar icon (<= 110px), keep the exact badge
+      if (bw <= 110 && bh <= 110) continue;
 
       const px = Math.max(0, x);
       const py = Math.max(0, y);
@@ -422,10 +423,15 @@
       if (pw < 40 || ph < 40) continue;
 
       try {
-        const sampleW = Math.min(160, Math.max(40, Math.round(pw / 4)));
-        const sampleH = Math.min(160, Math.max(40, Math.round(ph / 4)));
+        const sampleW = Math.min(160, Math.max(60, Math.round(pw / 3)));
+        const sampleH = Math.min(160, Math.max(60, Math.round(ph / 3)));
         const off = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
-        if (!off) continue;
+        if (!off) {
+          const fw = Math.round(pw * 0.28);
+          const fh = Math.round(ph * 0.32);
+          match.bbox = { x: Math.round(px + (pw - fw) / 2), y: Math.round(py + ph * 0.10), width: fw, height: fh };
+          continue;
+        }
 
         off.width = sampleW;
         off.height = sampleH;
@@ -435,16 +441,16 @@
         const imgData = oCtx.getImageData(0, 0, sampleW, sampleH);
         const data = imgData.data;
 
-        let minSkinX = sampleW, maxSkinX = 0, minSkinY = sampleH, maxSkinY = 0;
-        let skinCount = 0;
+        const skinMap = new Uint8Array(sampleW * sampleH);
+        const grayMap = new Uint8Array(sampleW * sampleH);
 
-        // Scan upper 70% of image for face skin-tone pixels
-        for (let sy = 0; sy < Math.round(sampleH * 0.75); sy++) {
+        for (let sy = 0; sy < sampleH; sy++) {
           for (let sx = 0; sx < sampleW; sx++) {
             const idx = (sy * sampleW + sx) * 4;
             const r = data[idx];
             const g = data[idx + 1];
             const b = data[idx + 2];
+            grayMap[sy * sampleW + sx] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
 
             // Robust multi-ethnicity human skin classifier
             const isSkin = (
@@ -456,51 +462,96 @@
             );
 
             if (isSkin) {
-              skinCount++;
-              if (sx < minSkinX) minSkinX = sx;
-              if (sx > maxSkinX) maxSkinX = sx;
-              if (sy < minSkinY) minSkinY = sy;
-              if (sy > maxSkinY) maxSkinY = sy;
+              skinMap[sy * sampleW + sx] = 1;
             }
           }
         }
 
-        const minThreshold = sampleW * sampleH * 0.015;
-        if (skinCount > minThreshold && maxSkinX > minSkinX && maxSkinY > minSkinY) {
-          const skinW = maxSkinX - minSkinX;
-          const skinH = maxSkinY - minSkinY;
+        // Multi-scale sliding window search for the exact face oval
+        // Candidate face widths: 22%, 30%, 40% of photo width
+        const candidateSizes = [
+          Math.round(sampleW * 0.22),
+          Math.round(sampleW * 0.30),
+          Math.round(sampleW * 0.40)
+        ];
 
-          // Pad slightly around face to capture hairline, glasses, and chin
-          const padX = Math.round(skinW * 0.15);
-          const padY = Math.round(skinH * 0.18);
-          const relX = Math.max(0, minSkinX - padX);
-          const relY = Math.max(0, minSkinY - padY);
-          const relW = Math.min(sampleW - relX, skinW + padX * 2);
-          const relH = Math.min(sampleH - relY, skinH + padY * 2);
+        let bestScore = -1;
+        let bestBox = null;
 
-          const scaleX = pw / sampleW;
-          const scaleY = ph / sampleH;
+        for (const winW of candidateSizes) {
+          const winH = Math.round(winW * 1.18); // Natural face oval ratio
+          if (winW >= sampleW || winH >= sampleH) continue;
 
+          const step = Math.max(2, Math.round(winW * 0.15));
+          const maxY = Math.min(sampleH - winH, Math.round(sampleH * 0.60)); // Restrict to upper 60% of photo
+
+          for (let wy = Math.round(sampleH * 0.04); wy <= maxY; wy += step) {
+            for (let wx = 0; wx <= sampleW - winW; wx += step) {
+              let winSkin = 0;
+              let upperLuma = 0;
+              let lowerLuma = 0;
+              const halfH = Math.round(winH / 2);
+
+              for (let dy = 0; dy < winH; dy++) {
+                const rowY = wy + dy;
+                const isUpper = dy < halfH;
+                for (let dx = 0; dx < winW; dx++) {
+                  const colX = wx + dx;
+                  const pIdx = rowY * sampleW + colX;
+                  if (skinMap[pIdx]) winSkin++;
+                  if (isUpper) {
+                    upperLuma += grayMap[pIdx];
+                  } else {
+                    lowerLuma += grayMap[pIdx];
+                  }
+                }
+              }
+
+              const area = winW * winH;
+              const skinDensity = winSkin / area;
+
+              if (skinDensity > 0.18 && skinDensity < 0.90) {
+                const upperAvg = upperLuma / (winW * halfH);
+                const lowerAvg = lowerLuma / (winW * (winH - halfH));
+                const contrastScore = Math.max(0, lowerAvg - upperAvg);
+
+                const centerXDist = Math.abs((wx + winW / 2) - sampleW / 2) / sampleW;
+                const centerBias = 1.0 - centerXDist * 0.35;
+                const topBias = 1.0 - (wy / sampleH) * 0.45;
+
+                const score = (skinDensity * 100) + (contrastScore * 0.5) + (centerBias * 25) + (topBias * 25);
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestBox = { x: wx, y: wy, width: winW, height: winH };
+                }
+              }
+            }
+          }
+        }
+
+        const scaleX = pw / sampleW;
+        const scaleY = ph / sampleH;
+
+        if (bestBox && bestScore > 20) {
           match.bbox = {
-            x: Math.round(px + relX * scaleX),
-            y: Math.round(py + relY * scaleY),
-            width: Math.round(relW * scaleX),
-            height: Math.round(relH * scaleY)
+            x: Math.round(px + bestBox.x * scaleX),
+            y: Math.round(py + bestBox.y * scaleY),
+            width: Math.round(bestBox.width * scaleX),
+            height: Math.round(bestBox.height * scaleY)
           };
         } else {
-          // Centered upper-third portrait fallback for face
-          const fw = Math.round(pw * 0.45);
-          const fh = Math.round(ph * 0.45);
+          // Tight central face box (28% of width, 32% of height in upper-center)
+          const fw = Math.round(pw * 0.28);
+          const fh = Math.round(ph * 0.32);
           const fx = Math.round(px + (pw - fw) / 2);
-          const fy = Math.round(py + ph * 0.12);
+          const fy = Math.round(py + ph * 0.10);
           match.bbox = { x: fx, y: fy, width: fw, height: fh };
         }
       } catch (err) {
-        // Fallback to upper-center portrait face box
-        const fw = Math.round(pw * 0.45);
-        const fh = Math.round(ph * 0.45);
+        const fw = Math.round(pw * 0.28);
+        const fh = Math.round(ph * 0.32);
         const fx = Math.round(px + (pw - fw) / 2);
-        const fy = Math.round(py + ph * 0.12);
+        const fy = Math.round(py + ph * 0.10);
         match.bbox = { x: fx, y: fy, width: fw, height: fh };
       }
     }

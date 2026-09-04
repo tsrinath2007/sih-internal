@@ -141,12 +141,12 @@
     }
 
     // Auto-detect User Avatars, Profile Pictures, Headshots, and Photos for Anonymization
-    const avatarCandidates = document.querySelectorAll('img, image, [role="img"], svg, picture, [style*="background-image"], [class*="avatar"], [class*="profile"], [class*="photo"], [class*="picture"], [id*="avatar"], [id*="profile"], [id*="photo"]');
+    const avatarCandidates = document.querySelectorAll('img, [style*="background-image"]');
     for (const el of avatarCandidates) {
       if (el.id === 'parallax-topbar-iframe' || el.closest('#parallax-topbar-iframe')) continue;
 
       const rect = el.getBoundingClientRect();
-      if (rect.width >= 20 && rect.width <= 2500 && rect.height >= 20 && rect.height <= 2500 && rect.bottom > 0 && rect.top < window.innerHeight) {
+      if (rect.width >= 24 && rect.width <= 2500 && rect.height >= 24 && rect.height <= 2500 && rect.bottom > 0 && rect.top < window.innerHeight) {
         const classStr = (el.getAttribute('class') || el.className?.baseVal || el.className || '').toString().toLowerCase();
         const idStr = (el.getAttribute('id') || '').toLowerCase();
         const srcStr = (el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('xlink:href') || el.src || '').toLowerCase();
@@ -160,7 +160,6 @@
         // Check if this image element is a genuine user avatar, profile photo, or photo
         const isAvatar = 
           tagName === 'IMG' ||
-          tagName === 'PICTURE' ||
           srcStr.includes('googleusercontent.com') ||
           srcStr.includes('avatar') ||
           srcStr.includes('profile') ||
@@ -194,23 +193,18 @@
           ariaStr.includes('avatar') ||
           ariaStr.includes('account');
 
-        if (isAvatar) {
-          const innerImg = tagName !== 'IMG' ? el.querySelector('img') : null;
-          const targetRect = innerImg ? innerImg.getBoundingClientRect() : rect;
-
-          if (targetRect.width >= 20 && targetRect.height >= 20) {
-            words.push({
-              text: '[PHOTO_AVATAR]',
-              isAvatar: true,
-              confidence: 99,
-              bbox: {
-                x: Math.round(targetRect.left),
-                y: Math.round(targetRect.top),
-                width: Math.round(targetRect.width),
-                height: Math.round(targetRect.height)
-              }
-            });
-          }
+        if (isAvatar && rect.width >= 24 && rect.height >= 24) {
+          words.push({
+            text: '[PHOTO_AVATAR]',
+            isAvatar: true,
+            confidence: 99,
+            bbox: {
+              x: Math.round(rect.left),
+              y: Math.round(rect.top),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height)
+            }
+          });
         }
       }
     }
