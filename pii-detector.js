@@ -400,10 +400,10 @@
   }
 
   /**
-   * Refines avatar / photo bounding boxes to pinpoint ONLY the face region
+   * Refines avatar / photo bounding boxes to pinpoint ONLY the exact human face region
    * For small avatars (<= 110px), keeps the tight icon crop.
-   * For larger photos/portraits/webcams, uses multi-scale sliding-window facial localization
-   * to tightly bound only the eyes, nose, mouth & cheeks (ignoring laptop, background, and body).
+   * For larger photos/portraits/ID cards/webcams, uses calibrated YCbCr chrominance + connected
+   * component face cluster localization to tightly isolate the face (rejecting wooden desks, clothing, background, and cards).
    */
   function refineFaceBoundingBoxes(matches, img, canvasW, canvasH) {
     if (!matches || !Array.isArray(matches) || !img) return matches;
@@ -423,8 +423,8 @@
       if (pw < 40 || ph < 40) continue;
 
       try {
-        const sampleW = Math.min(160, Math.max(60, Math.round(pw / 3)));
-        const sampleH = Math.min(160, Math.max(60, Math.round(ph / 3)));
+        const sampleW = Math.min(240, Math.max(80, Math.round(pw / 2)));
+        const sampleH = Math.min(240, Math.max(80, Math.round(ph / 2)));
         const off = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
         if (!off) {
           const fw = Math.round(pw * 0.28);
@@ -440,25 +440,27 @@
 
         const imgData = oCtx.getImageData(0, 0, sampleW, sampleH);
         const data = imgData.data;
-
         const skinMap = new Uint8Array(sampleW * sampleH);
-        const grayMap = new Uint8Array(sampleW * sampleH);
 
+        // Step 1: Strict YCbCr + RGB Human Skin Chrominance Classifier
+        // Rejects brown/amber wooden desks, blue/dark clothing, and white/gray cards
         for (let sy = 0; sy < sampleH; sy++) {
           for (let sx = 0; sx < sampleW; sx++) {
             const idx = (sy * sampleW + sx) * 4;
             const r = data[idx];
             const g = data[idx + 1];
             const b = data[idx + 2];
-            grayMap[sy * sampleW + sx] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
 
-            // Robust multi-ethnicity human skin classifier
+            const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+            const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+
+            // Universal Human Face Skin Criteria
             const isSkin = (
-              r > 55 && g > 30 && b > 15 &&
-              r > g && g > b &&
-              (r - g) >= 6 &&
-              (r - b) >= 10 &&
-              Math.abs(r - g) < 140
+              cb >= 80 && cb <= 126 &&
+              cr >= 133 && cr <= 174 &&
+              r > 70 && g > 40 && b > 25 &&
+              (r - g) >= 8 && (r - g) <= 75 &&
+              (r - b) >= 12
             );
 
             if (isSkin) {
@@ -467,63 +469,53 @@
           }
         }
 
-        // Multi-scale sliding window search for the exact face oval
-        // Candidate face widths: 22%, 30%, 40% of photo width
-        const candidateSizes = [
-          Math.round(sampleW * 0.22),
-          Math.round(sampleW * 0.30),
-          Math.round(sampleW * 0.40)
-        ];
+        // Step 2: Connected Component Face Clustering
+        const visited = new Uint8Array(sampleW * sampleH);
+        const clusters = [];
 
-        let bestScore = -1;
-        let bestBox = null;
+        for (let cy = 0; cy < sampleH; cy++) {
+          for (let cx = 0; cx < sampleW; cx++) {
+            const idx = cy * sampleW + cx;
+            if (skinMap[idx] && !visited[idx]) {
+              let count = 0;
+              let minX = cx, maxX = cx, minY = cy, maxY = cy;
+              const queue = [cx, cy];
+              visited[idx] = 1;
 
-        for (const winW of candidateSizes) {
-          const winH = Math.round(winW * 1.18); // Natural face oval ratio
-          if (winW >= sampleW || winH >= sampleH) continue;
+              let qHead = 0;
+              while (qHead < queue.length) {
+                const qx = queue[qHead++];
+                const qy = queue[qHead++];
+                count++;
 
-          const step = Math.max(2, Math.round(winW * 0.15));
-          const maxY = Math.min(sampleH - winH, Math.round(sampleH * 0.60)); // Restrict to upper 60% of photo
+                if (qx < minX) minX = qx;
+                if (qx > maxX) maxX = qx;
+                if (qy < minY) minY = qy;
+                if (qy > maxY) maxY = qy;
 
-          for (let wy = Math.round(sampleH * 0.04); wy <= maxY; wy += step) {
-            for (let wx = 0; wx <= sampleW - winW; wx += step) {
-              let winSkin = 0;
-              let upperLuma = 0;
-              let lowerLuma = 0;
-              const halfH = Math.round(winH / 2);
-
-              for (let dy = 0; dy < winH; dy++) {
-                const rowY = wy + dy;
-                const isUpper = dy < halfH;
-                for (let dx = 0; dx < winW; dx++) {
-                  const colX = wx + dx;
-                  const pIdx = rowY * sampleW + colX;
-                  if (skinMap[pIdx]) winSkin++;
-                  if (isUpper) {
-                    upperLuma += grayMap[pIdx];
-                  } else {
-                    lowerLuma += grayMap[pIdx];
+                // 8-way neighbors with 2px stride bridge
+                const neighbors = [
+                  [qx + 1, qy], [qx - 1, qy], [qx, qy + 1], [qx, qy - 1],
+                  [qx + 2, qy], [qx - 2, qy], [qx, qy + 2], [qx, qy - 2]
+                ];
+                for (const [nx, ny] of neighbors) {
+                  if (nx >= 0 && nx < sampleW && ny >= 0 && ny < sampleH) {
+                    const nIdx = ny * sampleW + nx;
+                    if (skinMap[nIdx] && !visited[nIdx]) {
+                      visited[nIdx] = 1;
+                      queue.push(nx, ny);
+                    }
                   }
                 }
               }
 
-              const area = winW * winH;
-              const skinDensity = winSkin / area;
+              const cw = maxX - minX + 1;
+              const ch = maxY - minY + 1;
+              const ratio = ch / Math.max(1, cw);
 
-              if (skinDensity > 0.18 && skinDensity < 0.90) {
-                const upperAvg = upperLuma / (winW * halfH);
-                const lowerAvg = lowerLuma / (winW * (winH - halfH));
-                const contrastScore = Math.max(0, lowerAvg - upperAvg);
-
-                const centerXDist = Math.abs((wx + winW / 2) - sampleW / 2) / sampleW;
-                const centerBias = 1.0 - centerXDist * 0.35;
-                const topBias = 1.0 - (wy / sampleH) * 0.45;
-
-                const score = (skinDensity * 100) + (contrastScore * 0.5) + (centerBias * 25) + (topBias * 25);
-                if (score > bestScore) {
-                  bestScore = score;
-                  bestBox = { x: wx, y: wy, width: winW, height: winH };
-                }
+              // Valid human face clusters have natural proportions (ratio between 0.75 and 1.85)
+              if (count >= 25 && ratio >= 0.70 && ratio <= 1.95 && cw >= 12 && ch >= 14) {
+                clusters.push({ minX, maxX, minY, maxY, cw, ch, count, ratio });
               }
             }
           }
@@ -532,15 +524,29 @@
         const scaleX = pw / sampleW;
         const scaleY = ph / sampleH;
 
-        if (bestBox && bestScore > 20) {
+        if (clusters.length > 0) {
+          // Sort by skin pixel mass
+          clusters.sort((a, b) => b.count - a.count);
+          const best = clusters[0];
+
+          // Expand tightly around the face to encompass hairline, forehead, glasses, and chin
+          const padX = Math.round(best.cw * 0.12);
+          const padYTop = Math.round(best.ch * 0.18); // Forehead / hair
+          const padYBottom = Math.round(best.ch * 0.10); // Chin
+
+          const relX = Math.max(0, best.minX - padX);
+          const relY = Math.max(0, best.minY - padYTop);
+          const relW = Math.min(sampleW - relX, best.cw + padX * 2);
+          const relH = Math.min(sampleH - relY, best.ch + padYTop + padYBottom);
+
           match.bbox = {
-            x: Math.round(px + bestBox.x * scaleX),
-            y: Math.round(py + bestBox.y * scaleY),
-            width: Math.round(bestBox.width * scaleX),
-            height: Math.round(bestBox.height * scaleY)
+            x: Math.round(px + relX * scaleX),
+            y: Math.round(py + relY * scaleY),
+            width: Math.round(relW * scaleX),
+            height: Math.round(relH * scaleY)
           };
         } else {
-          // Tight central face box (28% of width, 32% of height in upper-center)
+          // Fallback: tight 28% upper-center portrait face box
           const fw = Math.round(pw * 0.28);
           const fh = Math.round(ph * 0.32);
           const fx = Math.round(px + (pw - fw) / 2);
