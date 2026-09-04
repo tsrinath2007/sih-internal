@@ -283,6 +283,22 @@
       }
     }
 
+    // Explicit Avatar & Face Photo Anonymization
+    for (let wIdx = 0; wIdx < indexedWords.length; wIdx++) {
+      const w = indexedWords[wIdx];
+      if ((w.isAvatar || w.text === '[PHOTO_AVATAR]') && !usedWordIndices.has(w.originalIdx)) {
+        usedWordIndices.add(w.originalIdx);
+        matches.push({
+          type: 'AVATAR',
+          bbox: w.bbox,
+          confidence: 98.0,
+          matchedText: 'User Profile Photo',
+          wordIndices: [w.originalIdx],
+          isLowConfidence: false
+        });
+      }
+    }
+
     matches.sort((a, b) => {
       const yDiff = a.bbox.y - b.bbox.y;
       if (Math.abs(yDiff) > 12) return yDiff;
@@ -295,6 +311,7 @@
       PHONE: matches.filter(m => m.type === 'PHONE').length,
       OTP: matches.filter(m => m.type === 'OTP').length,
       CARD: matches.filter(m => m.type === 'CARD').length,
+      AVATAR: matches.filter(m => m.type === 'AVATAR').length,
       lowConfidenceCount: matches.filter(m => m.isLowConfidence).length
     };
 

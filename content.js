@@ -140,6 +140,45 @@
       }
     }
 
+    // Auto-detect User Avatars, Profile Pictures, and Circular Face Photos for Anonymization
+    const avatarCandidates = document.querySelectorAll('img, [role="img"], svg.avatar, .avatar, .profile-pic, .user-avatar, [class*="avatar"], [class*="profile-photo"]');
+    for (const el of avatarCandidates) {
+      if (el.id === 'parallax-topbar-iframe') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width >= 20 && rect.width <= 160 && rect.height >= 20 && rect.height <= 160 && rect.bottom > 0 && rect.top < window.innerHeight) {
+        const isSquareOrRound = Math.abs(rect.width - rect.height) <= 20;
+        const className = (el.className || '').toString().toLowerCase();
+        const src = (el.src || '').toLowerCase();
+        const isAvatar = isSquareOrRound && (
+          className.includes('avatar') || 
+          className.includes('profile') || 
+          className.includes('user') ||
+          className.includes('account') ||
+          src.includes('avatar') || 
+          src.includes('photo') || 
+          src.includes('googleusercontent') ||
+          src.includes('profile') ||
+          el.getAttribute('role') === 'img' ||
+          window.getComputedStyle(el).borderRadius.includes('50%') ||
+          window.getComputedStyle(el).borderRadius.includes('9999px')
+        );
+
+        if (isAvatar) {
+          words.push({
+            text: '[PHOTO_AVATAR]',
+            isAvatar: true,
+            confidence: 98,
+            bbox: {
+              x: Math.round(rect.left),
+              y: Math.round(rect.top),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height)
+            }
+          });
+        }
+      }
+    }
+
     return words;
   }
 

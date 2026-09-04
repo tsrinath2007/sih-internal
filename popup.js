@@ -364,7 +364,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
 
-          // Step 1B: Bold high-contrast red/orange (#E8491A) boxes ONLY for PII regions
+          // Step 1B: Bold high-contrast boxes ONLY for PII / AVATAR regions
           for (const match of piiDetection.matches) {
             const { x, y, width: bw, height: bh } = match.bbox;
             const pad = 4;
@@ -373,16 +373,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             const rw = bw + pad * 2;
             const rh = bh + pad * 2;
 
+            const isAvatar = match.type === 'AVATAR';
+            const tagColor = isAvatar ? '#a855f7' : '#E8491A';
+            const tagBg = isAvatar ? 'rgba(168, 85, 247, 0.22)' : 'rgba(232, 73, 26, 0.22)';
+
             ctx.lineWidth = 3;
-            ctx.strokeStyle = '#E8491A';
-            ctx.fillStyle = 'rgba(232, 73, 26, 0.22)';
+            ctx.strokeStyle = tagColor;
+            ctx.fillStyle = tagBg;
             ctx.strokeRect(rx, ry, rw, rh);
             ctx.fillRect(rx, ry, rw, rh);
 
-            // High-contrast PII label tag
+            // High-contrast PII / AVATAR label tag
             const tagH = Math.min(15, Math.max(11, Math.round(rh * 0.45)));
             const tagW = Math.min(rw, Math.max(50, match.type.length * 7 + 12));
-            ctx.fillStyle = '#E8491A';
+            ctx.fillStyle = tagColor;
             ctx.fillRect(rx, Math.max(0, ry - tagH), tagW, tagH);
             ctx.font = `bold ${Math.round(tagH * 0.72)}px "JetBrains Mono", monospace`;
             ctx.fillStyle = '#ffffff';
@@ -392,7 +396,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        // 2. Render Sanitized Canvas: Dramatic, High-Contrast Solid Blackout Privacy Redactions
+        // 2. Render Sanitized Canvas: Dramatic Gaussian Frosted Blur + Dark Privacy Tint
         if (sanitizedCanvas && sanitizedWrapper) {
           sanitizedCanvas.width = width;
           sanitizedCanvas.height = height;
@@ -411,17 +415,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             const rw = bw + padX * 2;
             const rh = Math.max(22, bh + padY * 2);
 
-            // Solid Pitch-Black Block
-            sCtx.fillStyle = '#030712';
+            // Step A: Gaussian Frosted Blur on the underlying pixels
+            sCtx.save();
+            sCtx.beginPath();
+            sCtx.rect(rx, ry, rw, rh);
+            sCtx.clip();
+            sCtx.filter = 'blur(16px)';
+            sCtx.drawImage(img, 0, 0);
+            sCtx.restore();
+
+            // Step B: Frosted Dark Privacy Glass Tint
+            sCtx.fillStyle = match.type === 'AVATAR' ? 'rgba(15, 23, 42, 0.78)' : 'rgba(3, 7, 18, 0.84)';
             sCtx.fillRect(rx, ry, rw, rh);
 
-            // Sharp High-Contrast Highlight Border
-            sCtx.strokeStyle = match.isLowConfidence ? '#f43f5e' : '#00f2fe';
+            // Step C: Sharp High-Contrast Highlight Border
+            const strokeColor = match.isLowConfidence ? '#f43f5e' : (match.type === 'AVATAR' ? '#a855f7' : '#00f2fe');
+            sCtx.strokeStyle = strokeColor;
             sCtx.lineWidth = 2;
             sCtx.strokeRect(rx, ry, rw, rh);
 
-            // Bold White Monospace Label
-            const labelText = `[REDACTED ${match.type}]`;
+            // Step D: Bold Monospace Centered Label
+            const labelText = match.type === 'AVATAR' ? '[BLURRED AVATAR]' : `[REDACTED ${match.type}]`;
             const fontSize = Math.max(11, Math.min(14, Math.round(rh * 0.52)));
             sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
             sCtx.textAlign = 'center';
