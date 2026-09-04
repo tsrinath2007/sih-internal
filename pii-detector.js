@@ -114,11 +114,11 @@
     return str
       .replace(/[Ss]/g, '5')
       .replace(/[OoQqDd]/g, '0')
-      .replace(/[Il|!i]/g, '1')
-      .replace(/[Bb]/g, '8')
+      .replace(/[Il|!i\]]/g, '1')
+      .replace(/[Bb&]/g, '8')
       .replace(/[Zz]/g, '2')
-      .replace(/[Gg]/g, '6')
-      .replace(/[Tt]/g, '7')
+      .replace(/[GgKkHh]/g, '6')
+      .replace(/[Tt\?]/g, '7')
       .replace(/[Ee]/g, '6')
       .replace(/\D/g, '');
   }
@@ -403,9 +403,9 @@
               // 4. Formatted 4-Block Noisy Embossed Card (e.g. S476 7E78 9875 5432)
               (
                 rawSlice.length === 4 &&
-                digits.length >= 11 &&
+                digits.length >= 10 &&
                 cleanNone.length >= 14 && cleanNone.length <= 18 &&
-                (digits.length / cleanNone.length) >= 0.70 &&
+                (digits.length / cleanNone.length) >= 0.65 &&
                 (repairedDigits.length === 15 || repairedDigits.length === 16) &&
                 /^[2-6]/.test(repairedDigits) &&
                 rawSlice.every(w => {
@@ -413,22 +413,22 @@
                   const wd = wt.replace(/\D/g, '');
                   return wt.length >= 3 && wt.length <= 5 && wd.length >= 2;
                 }) &&
-                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 140
+                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
               ) ||
-              // 5. 3-Block Noisy Embossed Card (e.g. S476 7789875 5432)
+              // 5. 3-Block Noisy Embossed Card (e.g. S476 7789875 5432, 547k 7h78,987k 5432)
               (
                 rawSlice.length === 3 &&
-                digits.length >= 11 &&
+                digits.length >= 10 &&
                 cleanNone.length >= 14 && cleanNone.length <= 18 &&
-                (digits.length / cleanNone.length) >= 0.70 &&
+                (digits.length / cleanNone.length) >= 0.65 &&
                 (repairedDigits.length === 15 || repairedDigits.length === 16) &&
                 /^[2-6]/.test(repairedDigits) &&
                 rawSlice.every(w => {
                   const wt = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
                   const wd = wt.replace(/\D/g, '');
-                  return wt.length >= 3 && wt.length <= 9 && wd.length >= 2;
+                  return wt.length >= 3 && wt.length <= 10 && wd.length >= 2;
                 }) &&
-                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 140
+                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
               ) ||
               // 6. Standard Card Format regex with pure digits
               (/^(\d{4}[\s\-]?){3}\d{4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||

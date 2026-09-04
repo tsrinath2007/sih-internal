@@ -394,6 +394,30 @@ describe('PIIDetectorDOM Unit Tests', () => {
     const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
     expect(cardMatches.length).toBe(0);
   });
+
+  it('detects 16-digit card when OCR recognizes OCR-A font digits with k and h substitutions', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const lowResWords = [
+      { text: '2)', confidence: 75, bbox: { x: 129, y: 74, width: 22, height: 29 } },
+      { text: 'barclaycard', confidence: 90, bbox: { x: 159, y: 74, width: 77, height: 29 } },
+      { text: '=', confidence: 60, bbox: { x: 279, y: 79, width: 47, height: 28 } },
+      { text: ')', confidence: 50, bbox: { x: 312, y: 116, width: 14, height: 17 } },
+      { text: '547k', confidence: 85, bbox: { x: 147, y: 143, width: 32, height: 11 } },
+      { text: '7h78,987k', confidence: 80, bbox: { x: 191, y: 143, width: 76, height: 11 } },
+      { text: '5432', confidence: 90, bbox: { x: 279, y: 143, width: 33, height: 11 } }
+    ];
+
+    const result = PIIDetector.detectPII(lowResWords);
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBe(1);
+
+    const match = cardMatches[0];
+    expect(match.matchedText).toBe('547k 7h78,987k 5432');
+    expect(match.bbox.x).toBe(147);
+    expect(match.bbox.width).toBe(165);
+  });
 });
 
 
