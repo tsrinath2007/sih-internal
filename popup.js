@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const ctx = offscreen.getContext('2d');
             ctx.drawImage(img, 0, 0, targetW, targetH);
             resolve({
-              dataUrl: offscreen.toDataURL('image/jpeg', 0.85),
+              dataUrl: offscreen.toDataURL('image/png'),
               scale: 1 / scale,
               origW,
               origH

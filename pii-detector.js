@@ -106,6 +106,23 @@
   }
 
   /**
+   * Repairs OCR confusable characters in potential card and embossed digit strings
+   * (e.g. S -> 5, O/Q/D -> 0, I/l/|/! -> 1, B -> 8, Z -> 2, G -> 6, T -> 7)
+   */
+  function normalizeOcrCardDigits(str) {
+    if (!str) return '';
+    return str
+      .replace(/[Ss]/g, '5')
+      .replace(/[OoQqDd]/g, '0')
+      .replace(/[Il|!i]/g, '1')
+      .replace(/[Bb]/g, '8')
+      .replace(/[Zz]/g, '2')
+      .replace(/[Gg]/g, '6')
+      .replace(/[Tt]/g, '7')
+      .replace(/\D/g, '');
+  }
+
+  /**
    * Compute Euclidean distance between two rectangular bounding boxes
    */
   function getBboxDistance(b1, b2) {
@@ -222,6 +239,13 @@
         return otpTriggerKeywords.includes(clean);
       });
 
+    // Document-level Card Context Detection (detects credit/debit card brands or keywords anywhere in image/DOM)
+    const cardTriggerKeywords = ['card', 'barclaycard', 'barclays', 'mastercard', 'master', 'visa', 'amex', 'american express', 'debit', 'credit', 'rupay', 'discover', 'diners', 'maestro', 'jcb', 'business', 'valid', 'thru'];
+    const hasDocumentCardContext = words.some(w => {
+      const clean = unwrapUnicodeSmallText(w.text || '').toLowerCase().replace(/[^a-z]/g, '');
+      return cardTriggerKeywords.some(k => clean.includes(k));
+    });
+
     // Group words into lines by Y position
     const indexedWords = words.map((w, idx) => ({
       ...w,
@@ -289,6 +313,7 @@
           const cleanText = unwrappedSpace.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
           const cleanNone = unwrappedNone.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
           const digits = cleanNone.replace(/\D/g, '');
+          const repairedDigits = normalizeOcrCardDigits(cleanNone);
 
           const prevWord1 = unwrapUnicodeSmallText(line[i - 1]?.text || '');
           const prevWord2 = unwrapUnicodeSmallText(line[i - 2]?.text || '');
@@ -359,15 +384,19 @@
             matchType = 'IFSC';
             matchedText = cleanNone.toUpperCase();
           }
-          // 6. PAYMENT CARD (13-19 digits: Luhn validated OR 4x4 / 4-6-5 blocks OR 15-16 digits with card prefixes/context/mock cards)
+          // 6. PAYMENT CARD (13-19 digits: Luhn validated OR 4x4 / 4-6-5 blocks OR 15-16 digits with card prefixes/context/mock cards/OCR repair)
           else if (
-            digits.length >= 13 && digits.length <= 19 &&
+            (digits.length >= 13 && digits.length <= 19 || repairedDigits.length >= 13 && repairedDigits.length <= 19) &&
             !/^(account|acc|wire|phone|tel|ifsc|pan|dob)/i.test(prevWord1) &&
             (
               luhnCheck(digits) ||
+              luhnCheck(repairedDigits) ||
               (digits.length === 16 && (/^[2-6]/.test(digits) || /^(\d{4}[\s\-]?){4}$/.test(cleanText) || rawSlice.length === 4)) ||
+              (repairedDigits.length === 16 && (/^[2-6]/.test(repairedDigits) || rawSlice.length >= 3)) ||
               (digits.length === 15 && (/^3[47]/.test(digits) || /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText))) ||
+              (repairedDigits.length === 15 && (/^[2-6]|3[47]/.test(repairedDigits) || hasDocumentCardContext)) ||
               (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
+              (hasDocumentCardContext && (repairedDigits.length >= 13 && repairedDigits.length <= 19)) ||
               /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord1) ||
               /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord2)
             )
@@ -1026,6 +1055,7 @@
     refineFaceBoundingBoxes,
     generateSanitizedText,
     unwrapUnicodeSmallText,
+    normalizeOcrCardDigits,
     validateAadhaar,
     luhnCheck
   };

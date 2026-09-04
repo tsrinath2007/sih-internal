@@ -332,7 +332,36 @@ describe('PIIDetectorDOM Unit Tests', () => {
     const cvvMatch = cardMatches.find((m: any) => m.matchedText.includes('849'));
     expect(cvvMatch).toBeDefined();
   });
+
+  it('detects cards even when OCR confuses embossed 5 with S, 0 with O, or merges blocks', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    expect(PIIDetector.normalizeOcrCardDigits('S476 7789875 5432')).toBe('547677898755432');
+    expect(PIIDetector.normalizeOcrCardDigits('4532 O15O I234 567I')).toBe('4532015012345671');
+
+    // Exactly matching the tokens produced by Tesseract on the user's Barclaycard screenshot
+    const userScreenshotWords = [
+      { text: 'Input', confidence: 90, bbox: { x: 504, y: 152, width: 33, height: 12 } },
+      { text: 'barclaycard', confidence: 90, bbox: { x: 405, y: 179, width: 126, height: 43 } },
+      { text: 'ser', confidence: 90, bbox: { x: 597, y: 181, width: 81, height: 54 } },
+      { text: 'S476', confidence: 90, bbox: { x: 385, y: 290, width: 54, height: 18 } },
+      { text: '7789875', confidence: 90, bbox: { x: 457, y: 289, width: 125, height: 19 } },
+      { text: '5432', confidence: 90, bbox: { x: 601, y: 290, width: 53, height: 18 } }
+    ];
+
+    const result = PIIDetector.detectPII(userScreenshotWords);
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBe(1);
+
+    const match = cardMatches[0];
+    expect(match.matchedText).toBe('S476 7789875 5432');
+    // Box should cover all 3 card number tokens from x:385 to x:654
+    expect(match.bbox.x).toBe(385);
+    expect(match.bbox.width).toBe(269);
+  });
 });
+
 
 
 
