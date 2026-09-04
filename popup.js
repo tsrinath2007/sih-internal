@@ -418,7 +418,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const isAvatar = match.type === 'AVATAR';
 
             if (isAvatar) {
-              // --- TRUE PHOTOGRAPHIC GAUSSIAN BLUR (Soft Frosted Face Privacy) ---
+              // --- ICONIC HIGH-TECH MOSAIC / PIXELATION FACE PRIVACY ---
               const pad = 4;
               const rx = Math.max(0, Math.floor(x - pad));
               const ry = Math.max(0, Math.floor(y - pad));
@@ -427,7 +427,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
               if (rw > 4 && rh > 4) {
                 const isSmallIcon = (rw <= 140 && rh <= 140) && Math.abs(rw - rh) / Math.max(rw, rh) < 0.2;
-                const radius = isSmallIcon ? Math.min(rw, rh) / 2 : Math.min(16, rw * 0.05, rh * 0.05);
+                const radius = isSmallIcon ? Math.min(rw, rh) / 2 : Math.min(14, rw * 0.05, rh * 0.05);
 
                 sCtx.save();
                 sCtx.beginPath();
@@ -438,27 +438,45 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 sCtx.clip();
 
-                // Step 1: Multi-Pass Downscale-Upscale Extreme Gaussian Blur
+                // Step 1: Calculate Crisp Mosaic Pixel Block Grid (8-14 blocks across face)
+                const blockSize = Math.max(8, Math.min(20, Math.round(Math.min(rw, rh) / 9)));
+                const cols = Math.max(4, Math.round(rw / blockSize));
+                const rows = Math.max(4, Math.round(rh / blockSize));
+
+                // Step 2: Downsample Face Region to Grid Dimensions
                 const off = document.createElement('canvas');
-                const scaleF = 0.035; // 3.5% downscale = silky smooth heavy photographic blur
-                off.width = Math.max(4, Math.round(rw * scaleF));
-                off.height = Math.max(4, Math.round(rh * scaleF));
+                off.width = cols;
+                off.height = rows;
                 const oCtx = off.getContext('2d');
-                oCtx.drawImage(img, rx, ry, rw, rh, 0, 0, off.width, off.height);
+                oCtx.drawImage(img, rx, ry, rw, rh, 0, 0, cols, rows);
 
-                sCtx.imageSmoothingEnabled = true;
-                sCtx.imageSmoothingQuality = 'high';
-                sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
+                // Step 3: Draw Crisp Un-smoothed Pixelated Mosaic Blocks
+                sCtx.imageSmoothingEnabled = false;
+                if ('mozImageSmoothingEnabled' in sCtx) sCtx.mozImageSmoothingEnabled = false;
+                if ('webkitImageSmoothingEnabled' in sCtx) sCtx.webkitImageSmoothingEnabled = false;
+                if ('msImageSmoothingEnabled' in sCtx) sCtx.msImageSmoothingEnabled = false;
+                sCtx.drawImage(off, 0, 0, cols, rows, rx, ry, rw, rh);
 
-                // Step 2: Native Canvas filter blur for ultra-smooth frosted photo appearance
-                try {
-                  sCtx.filter = 'blur(20px)';
-                  sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
-                  sCtx.filter = 'none';
-                } catch (e) {}
+                // Step 4: Draw Cyber Mosaic Grid Lines (TV & Security Censorship Style)
+                sCtx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+                sCtx.lineWidth = 1;
+                for (let c = 1; c < cols; c++) {
+                  const gx = rx + c * (rw / cols);
+                  sCtx.beginPath();
+                  sCtx.moveTo(gx, ry);
+                  sCtx.lineTo(gx, ry + rh);
+                  sCtx.stroke();
+                }
+                for (let r = 1; r < rows; r++) {
+                  const gy = ry + r * (rh / rows);
+                  sCtx.beginPath();
+                  sCtx.moveTo(rx, gy);
+                  sCtx.lineTo(rx + rw, gy);
+                  sCtx.stroke();
+                }
 
-                // Step 3: Delicate Frosted Glass Privacy Sheen
-                sCtx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+                // Step 5: Subtle Frosted Privacy Sheen
+                sCtx.fillStyle = 'rgba(255, 255, 255, 0.04)';
                 sCtx.fillRect(rx, ry, rw, rh);
 
                 sCtx.restore();
