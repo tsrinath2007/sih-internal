@@ -93,47 +93,30 @@
       }
     }
 
-    // Include Form Inputs, Textareas, Buttons, and Interactive Elements
-    const inputs = document.querySelectorAll('input, textarea, button, a, [role="button"], [aria-label]');
+    // Include Form Inputs and Textareas
+    const inputs = document.querySelectorAll('input, textarea');
     for (const inp of inputs) {
       if (inp.id === 'parallax-topbar-iframe') continue;
-      const val = (inp.value || inp.placeholder || inp.getAttribute('aria-label') || inp.innerText || '').trim();
+      const val = (inp.value || inp.placeholder || '').trim();
       if (!val) continue;
       const rect = inp.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
         const parts = val.split(/\s+/);
-        // For compact buttons/avatars/icons (< 100px) or non-text inputs, snap bounding box to the exact element rect
-        if (rect.width <= 100 || (inp.tagName !== 'INPUT' && inp.tagName !== 'TEXTAREA')) {
-          for (const p of parts) {
-            if (!p) continue;
-            words.push({
-              text: p,
-              confidence: 99,
-              bbox: {
-                x: Math.round(rect.left),
-                y: Math.round(rect.top),
-                width: Math.round(rect.width),
-                height: Math.round(rect.height)
-              }
-            });
-          }
-        } else {
-          let currX = rect.left + 4;
-          for (const p of parts) {
-            if (!p) continue;
-            const pw = Math.min(rect.width, Math.max(16, p.length * 8));
-            words.push({
-              text: p,
-              confidence: 99,
-              bbox: {
-                x: Math.round(currX),
-                y: Math.round(rect.top + 2),
-                width: Math.round(pw),
-                height: Math.round(rect.height - 4)
-              }
-            });
-            currX += pw + 4;
-          }
+        let currX = rect.left + 8;
+        for (const p of parts) {
+          if (!p) continue;
+          const pw = Math.min(rect.width - 16, Math.max(20, p.length * 8.5));
+          words.push({
+            text: p,
+            confidence: 99,
+            bbox: {
+              x: Math.round(currX),
+              y: Math.round(rect.top + 2),
+              width: Math.round(pw),
+              height: Math.round(rect.height - 4)
+            }
+          });
+          currX += pw + 4;
         }
       }
     }

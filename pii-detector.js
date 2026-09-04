@@ -98,9 +98,11 @@
       while (result.length > 0 && !/\d/.test(result[result.length - 1].text)) {
         result.pop();
       }
-      result = result.filter(w => /[\d+\-]/.test(w.text));
-    } else if (type === 'OTP') {
+      result = result.filter(w => /[\d+\-\(\)\.]/.test(w.text));
+    } else if (type === 'OTP' || type === 'ACCOUNT_NUM') {
       result = result.filter(w => /^\d+$/.test(w.text.replace(/[^0-9]/g, '')));
+    } else if (type === 'PAN' || type === 'IFSC') {
+      result = result.filter(w => /^[a-zA-Z0-9]+$/.test(w.text.replace(/[^a-zA-Z0-9]/g, '')));
     }
     return result;
   }
@@ -173,7 +175,7 @@
     // Sliding window pass across words in lines
     for (const line of lines) {
       const n = line.length;
-      for (let winSize = Math.min(6, n); winSize >= 1; winSize--) {
+      for (let winSize = Math.min(8, n); winSize >= 1; winSize--) {
         for (let i = 0; i <= n - winSize; i++) {
           const rawSlice = line.slice(i, i + winSize);
           const originalIndices = rawSlice.map(w => w.originalIdx);
@@ -183,7 +185,7 @@
           let gapTooBig = false;
           for (let g = 0; g < rawSlice.length - 1; g++) {
             const gap = rawSlice[g + 1].bbox.x - (rawSlice[g].bbox.x + rawSlice[g].bbox.width);
-            if (gap > 65) {
+            if (gap > 75) {
               gapTooBig = true;
               break;
             }
@@ -193,7 +195,8 @@
           const joinedSpace = rawSlice.map(w => w.text).join(' ');
           const joinedNone = rawSlice.map(w => w.text).join('');
           const cleanText = joinedSpace.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
-          const digits = joinedNone.replace(/\D/g, '');
+          const cleanNone = joinedNone.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
+          const digits = cleanNone.replace(/\D/g, '');
 
           let matchType = null;
           let matchedText = cleanText;
@@ -209,28 +212,61 @@
             matchType = 'EMAIL';
             matchedText = (em1 ? em1[0] : (em2 ? em2[0] : (em3 ? em3[0] : cleanText)));
           }
-          // 2. PHONE (Indian numbers with +91, 10 digits starting with 6-9, or international — strictly numeric phone characters)
+          // 2. INDIAN PAN CARD (5 uppercase letters, 4 digits, 1 uppercase letter e.g. ABCDE1234F, XYZPQ9876R)
+          else if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(cleanNone)) {
+            matchType = 'PAN';
+            matchedText = cleanNone;
+          }
+          // 3. BANK IFSC CODE (4 letters, 0, 6 alphanumeric e.g. HDFC0001234, SBIN0001234)
+          else if (/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanNone)) {
+            matchType = 'IFSC';
+            matchedText = cleanNone;
+          }
+          // 4. PHONE (Indian, US, European, French (+33), UK (+44), and all international formats)
           else if (
-            !/[a-zA-Z]{2,}/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile):?\s*/i, '')) &&
+            !/[a-zA-Z]{2,}/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile|hotline|desk|fax):?\s*/i, '')) &&
             (
+              // International prefix with + (e.g. +33 1 42 68 55 00, +44 20 7946 0919, +1-888-555-0199, +91 98765 43210)
+              (/^\+\d{1,4}[\s\-\.]?\(?\d{1,4}\)?([\s\-\.]?\d{1,4}){1,5}$/.test(cleanText) && digits.length >= 7 && digits.length <= 15) ||
               /^\+?91[\s\-]?[6-9]\d{9}$/.test(cleanText.replace(/\s+/g, '')) ||
               /^(\+?91[\s\-]?)?[6-9]\d{4}[\s\-]?\d{5}$/.test(cleanText) ||
               /^(\+?91[\s\-]?)?[6-9]\d{2}[\s\-]?\d{3}[\s\-]?\d{4}$/.test(cleanText) ||
               (digits.length === 12 && digits.startsWith('91') && /^[6-9]/.test(digits.slice(2)) && /^[\+\d\s\-\(\)\.]+$/.test(cleanText)) ||
               (digits.length === 10 && /^[6-9]/.test(digits) && /^[\+\d\s\-\(\)\.]+$/.test(cleanText)) ||
               /^\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText) ||
-              /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText)
+              /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText) ||
+              /^1[-.\s]?800[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText)
             )
           ) {
             matchType = 'PHONE';
             matchedText = joinedSpace;
           }
-          // 3. PAYMENT CARD (13-19 digits with strict Luhn Check and numeric tokens)
-          else if (/^[\d\s\-]{13,23}$/.test(joinedSpace) && digits.length >= 13 && digits.length <= 19 && luhnCheck(digits)) {
+          // 5. PAYMENT CARD (13-19 digits: Luhn validated OR standard card format with card prefix/keywords)
+          else if (
+            digits.length >= 13 && digits.length <= 19 &&
+            (
+              luhnCheck(digits) ||
+              (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
+              (/^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText)) ||
+              (/^(card|visa|mastercard|amex|debit|credit)/i.test((line[i - 1]?.text || '')))
+            )
+          ) {
             matchType = 'CARD';
             matchedText = joinedSpace;
           }
-          // 4. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP, excluding calendar years)
+          // 6. BANK ACCOUNT NUMBERS (9-18 digits preceded by Account, Acc, A/C, Wire, Beneficiary or settlement keywords)
+          else if (
+            digits.length >= 9 && digits.length <= 18 &&
+            (
+              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban)/i.test((line[i - 1]?.text || '')) ||
+              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban)/i.test((line[i - 2]?.text || '')) ||
+              /^(account|acc|a\/c)/i.test(cleanText)
+            )
+          ) {
+            matchType = 'ACCOUNT_NUM';
+            matchedText = joinedSpace;
+          }
+          // 7. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP, excluding calendar years)
           else if (/^\d{4,8}$/.test(cleanText)) {
             const numVal = parseInt(digits, 10);
             const isYear = digits.length === 4 && numVal >= 1900 && numVal <= 2099;
@@ -351,6 +387,9 @@
       OTP: matches.filter(m => m.type === 'OTP').length,
       CARD: matches.filter(m => m.type === 'CARD').length,
       AVATAR: matches.filter(m => m.type === 'AVATAR').length,
+      PAN: matches.filter(m => m.type === 'PAN').length,
+      IFSC: matches.filter(m => m.type === 'IFSC').length,
+      ACCOUNT_NUM: matches.filter(m => m.type === 'ACCOUNT_NUM').length,
       lowConfidenceCount: matches.filter(m => m.isLowConfidence).length
     };
 

@@ -466,10 +466,16 @@ document.addEventListener('DOMContentLoaded', async () => {
               // --- TEXT PII REDACTION (Dramatic Pitch-Black Solid Redaction Box) ---
               const padX = 8;
               const padY = 5;
-              const rx = Math.max(0, x - padX);
-              const ry = Math.max(0, y - padY);
-              const rw = bw + padX * 2;
               const rh = Math.max(22, bh + padY * 2);
+              const labelText = `[REDACTED ${match.type}]`;
+              const fontSize = Math.max(10, Math.min(13, Math.round(rh * 0.52)));
+              sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+              const textMetrics = sCtx.measureText(labelText);
+              const minBoxWidth = Math.ceil(textMetrics.width + 16);
+              const effectiveW = Math.max(bw + padX * 2, minBoxWidth);
+              const rx = Math.max(0, Math.round(x + bw / 2 - effectiveW / 2));
+              const ry = Math.max(0, y - padY);
+              const rw = effectiveW;
 
               // Solid Pitch-Black Block
               sCtx.fillStyle = '#030712';
@@ -481,9 +487,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               sCtx.strokeRect(rx, ry, rw, rh);
 
               // Bold White Monospace Centered Label
-              const labelText = `[REDACTED ${match.type}]`;
-              const fontSize = Math.max(11, Math.min(14, Math.round(rh * 0.52)));
-              sCtx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
               sCtx.textAlign = 'center';
               sCtx.textBaseline = 'middle';
               sCtx.fillStyle = '#ffffff';
