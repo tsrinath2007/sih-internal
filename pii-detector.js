@@ -194,7 +194,6 @@
           const joinedNone = rawSlice.map(w => w.text).join('');
           const cleanText = joinedSpace.trim().replace(/^[\(\[\{<:;,.]+|[\)\]\}>:;,.]+$/g, '');
           const digits = joinedNone.replace(/\D/g, '');
-          const normalizedDigits = joinedNone.replace(/[oO]/g, '0').replace(/[lI]/g, '1').replace(/[sS]/g, '5').replace(/\D/g, '');
 
           let matchType = null;
           let matchedText = cleanText;
@@ -210,28 +209,29 @@
             matchType = 'EMAIL';
             matchedText = (em1 ? em1[0] : (em2 ? em2[0] : (em3 ? em3[0] : cleanText)));
           }
-          // 2. PHONE (Indian numbers with +91, 10 digits starting with 6-9, or international)
+          // 2. PHONE (Indian numbers with +91, 10 digits starting with 6-9, or international — strictly numeric phone characters)
           else if (
-            /^\+?91[\s\-]?[6-9]\d{9}$/.test(cleanText.replace(/\s+/g, '')) ||
-            /^(\+?91[\s\-]?)?[6-9]\d{4}[\s\-]?\d{5}$/.test(cleanText) ||
-            /^(\+?91[\s\-]?)?[6-9]\d{2}[\s\-]?\d{3}[\s\-]?\d{4}$/.test(cleanText) ||
-            (digits.length === 12 && digits.startsWith('91') && /^[6-9]/.test(digits.slice(2))) ||
-            (digits.length === 10 && /^[6-9]/.test(digits)) ||
-            (normalizedDigits.length === 10 && /^[6-9]/.test(normalizedDigits)) ||
-            /^\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText) ||
-            /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText)
+            !/[a-zA-Z]{2,}/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile):?\s*/i, '')) &&
+            (
+              /^\+?91[\s\-]?[6-9]\d{9}$/.test(cleanText.replace(/\s+/g, '')) ||
+              /^(\+?91[\s\-]?)?[6-9]\d{4}[\s\-]?\d{5}$/.test(cleanText) ||
+              /^(\+?91[\s\-]?)?[6-9]\d{2}[\s\-]?\d{3}[\s\-]?\d{4}$/.test(cleanText) ||
+              (digits.length === 12 && digits.startsWith('91') && /^[6-9]/.test(digits.slice(2)) && /^[\+\d\s\-\(\)\.]+$/.test(cleanText)) ||
+              (digits.length === 10 && /^[6-9]/.test(digits) && /^[\+\d\s\-\(\)\.]+$/.test(cleanText)) ||
+              /^\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText) ||
+              /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText)
+            )
           ) {
             matchType = 'PHONE';
             matchedText = joinedSpace;
           }
-          // 3. PAYMENT CARD (13-19 digits with Luhn Check)
-          else if (/^\d[\d\s-]*\d$/.test(joinedSpace) && ((digits.length >= 13 && digits.length <= 19 && luhnCheck(digits)) ||
-              (normalizedDigits.length >= 13 && normalizedDigits.length <= 19 && luhnCheck(normalizedDigits)))) {
+          // 3. PAYMENT CARD (13-19 digits with strict Luhn Check and numeric tokens)
+          else if (/^[\d\s\-]{13,23}$/.test(joinedSpace) && digits.length >= 13 && digits.length <= 19 && luhnCheck(digits)) {
             matchType = 'CARD';
             matchedText = joinedSpace;
           }
           // 4. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP, excluding calendar years)
-          else if (/^\d{4,8}$/.test(cleanText) || (normalizedDigits.length >= 4 && normalizedDigits.length <= 8 && /^\d+$/.test(cleanText))) {
+          else if (/^\d{4,8}$/.test(cleanText)) {
             const numVal = parseInt(digits, 10);
             const isYear = digits.length === 4 && numVal >= 1900 && numVal <= 2099;
             
