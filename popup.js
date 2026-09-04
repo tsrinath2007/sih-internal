@@ -165,6 +165,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const activeTab = await getActiveWebTab();
 
+        // 1. Request DOM words in parallel
+        const domWordsPromise = (async () => {
+          if (!activeTab || !activeTab.id) return { words: [], viewportWidth: 1280, viewportHeight: 800 };
+          return new Promise((resolve) => {
+            const timer = setTimeout(() => resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 }), 200);
+            chrome.tabs.sendMessage(activeTab.id, { action: 'GET_DOM_WORDS' }, (res) => {
+              clearTimeout(timer);
+              if (chrome.runtime.lastError || !res) {
+                resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 });
+              } else {
+                resolve(res);
+              }
+            });
+          });
+        })();
+
         const captureResponse = await new Promise((resolve) => {
           chrome.runtime.sendMessage({ action: 'SCAN_REQUEST' }, (response) => {
             if (chrome.runtime.lastError) {
@@ -184,7 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Step 2: Processing OCR Locally with Tesseract.js
         setStatus('Processing OCR locally...', 'processing');
 
-        function downscaleImageForOCR(dataUrl, maxDimension = 1280) {
+        function downscaleImageForOCR(dataUrl, maxDimension = 1600) {
           return new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
@@ -204,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               const ctx = offscreen.getContext('2d');
               ctx.drawImage(img, 0, 0, targetW, targetH);
               resolve({
-                dataUrl: offscreen.toDataURL('image/jpeg', 0.82),
+                dataUrl: offscreen.toDataURL('image/jpeg', 0.85),
                 scale: 1 / scale,
                 origW,
                 origH
@@ -215,7 +231,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         }
 
-        const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1280);
+        const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
 
         console.log('[Parallax] Initializing local on-device Tesseract worker...');
         const worker = await Tesseract.createWorker('eng', 1, {
@@ -258,9 +274,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        console.log('[Parallax] OCR Raw Result Object:', ocrResult);
-        console.log('[Parallax] Raw Words Extracted:', rawWords.length);
-
         const scaleMult = optimizedImage.scale;
         const extractedWords = rawWords.map((word) => {
           const x0 = (word.bbox ? word.bbox.x0 : (word.x0 || 0)) * scaleMult;
@@ -283,17 +296,44 @@ document.addEventListener('DOMContentLoaded', async () => {
           };
         }).filter((w) => w.text.length > 0);
 
-        console.log(`[Parallax] Total Words Detected: ${extractedWords.length}`);
-
-        // Step 4: Run Local PII Detection & Bounding Box Merging
-        const piiDetection = PIIDetector.detectPII(extractedWords, { confidenceThreshold: 80.0 });
-        console.log('🛡️ [Parallax] PII Detection Output:', piiDetection);
-
-        // Step 5: Render Screenshot & Draw Bounding Boxes on Original Canvas
+        // Step 4: Render Screenshot & Merge with DOM Words
         const img = new Image();
         img.onload = async () => {
           const width = img.naturalWidth;
           const height = img.naturalHeight;
+
+          const domData = await domWordsPromise;
+          const domWords = domData.words || [];
+          const viewW = domData.viewportWidth || (window.innerWidth || 1280);
+          const viewH = domData.viewportHeight || (window.innerHeight || 800);
+          const scaleX = width / Math.max(1, viewW);
+          const scaleY = height / Math.max(1, viewH);
+
+          const scaledDomWords = domWords.map(w => ({
+            text: w.text,
+            confidence: w.confidence || 99,
+            bbox: {
+              x: Math.round(w.bbox.x * scaleX),
+              y: Math.round(w.bbox.y * scaleY),
+              width: Math.round(w.bbox.width * scaleX),
+              height: Math.round(w.bbox.height * scaleY)
+            }
+          }));
+
+          const mergedWords = [...scaledDomWords];
+          for (const ow of extractedWords) {
+            const isCovered = scaledDomWords.some(dw => {
+              const dx = Math.abs(dw.bbox.x - ow.bbox.x);
+              const dy = Math.abs(dw.bbox.y - ow.bbox.y);
+              return dx < 35 && dy < 25;
+            });
+            if (!isCovered) {
+              mergedWords.push(ow);
+            }
+          }
+
+          const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
+          console.log('🛡️ [Parallax] PII Detection Output:', piiDetection);
 
           // Render Original Canvas
           if (originalCanvas && originalWrapper) {
@@ -309,7 +349,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ctx.strokeStyle = '#00f2fe';
             ctx.fillStyle = 'rgba(0, 242, 254, 0.15)';
 
-            for (const item of extractedWords) {
+            for (const item of mergedWords) {
               const { x, y, width: w, height: h } = item.bbox;
               ctx.strokeRect(x, y, w, h);
               ctx.fillRect(x, y, w, h);

@@ -74,7 +74,11 @@
         try {
           range.setStart(node, start);
           range.setEnd(node, end);
-          const rect = range.getBoundingClientRect();
+          let rect = range.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) {
+            const parent = node.parentElement;
+            if (parent) rect = parent.getBoundingClientRect();
+          }
           if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
             words.push({
               text: match[0],
@@ -91,30 +95,30 @@
       }
     }
 
-    // Include Form Inputs and Textareas
-    const inputs = document.querySelectorAll('input, textarea');
+    // Include Form Inputs, Textareas, Buttons, and Interactive Elements
+    const inputs = document.querySelectorAll('input, textarea, button, a, [role="button"], [aria-label]');
     for (const inp of inputs) {
-      if (inp.type === 'hidden' || inp.type === 'password') continue;
-      const val = (inp.value || inp.placeholder || '').trim();
+      if (inp.id === 'parallax-topbar-iframe') continue;
+      const val = (inp.value || inp.placeholder || inp.getAttribute('aria-label') || inp.innerText || '').trim();
       if (!val) continue;
       const rect = inp.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
         const parts = val.split(/\s+/);
-        let currX = rect.left + 8;
+        let currX = rect.left + 4;
         for (const p of parts) {
           if (!p) continue;
-          const pw = Math.min(rect.width, Math.max(20, p.length * 8));
+          const pw = Math.min(rect.width, Math.max(16, p.length * 8));
           words.push({
             text: p,
             confidence: 99,
             bbox: {
               x: Math.round(currX),
-              y: Math.round(rect.top + 4),
+              y: Math.round(rect.top + 2),
               width: Math.round(pw),
-              height: Math.round(rect.height - 8)
+              height: Math.round(rect.height - 4)
             }
           });
-          currX += pw + 6;
+          currX += pw + 4;
         }
       }
     }
@@ -154,6 +158,19 @@
   // 5. Message Router (HUD <-> Host Webpage)
   window.addEventListener('message', (event) => {
     if (!event.data || typeof event.data !== 'object') return;
+
+    if (event.data.type === 'PARALLAX_REQUEST_DOM_WORDS') {
+      const words = extractVisibleWordsFast();
+      if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'PARALLAX_DOM_WORDS_RESPONSE',
+          words: words,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio || 1
+        }, '*');
+      }
+    }
 
     if (event.data.type === 'PARALLAX_ENABLE_LIVE_RADAR') {
       isLiveRadarActive = true;
@@ -221,8 +238,20 @@
     }
   });
 
-  // Listen for toolbar icon toggle message
+  // Listen for toolbar icon toggle message & DOM word requests
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message && (message.action === 'GET_DOM_WORDS' || message.type === 'READ_DOM_SNAPSHOT')) {
+      const words = extractVisibleWordsFast();
+      sendResponse({
+        success: true,
+        words: words,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio || 1
+      });
+      return true;
+    }
+
     if (message && message.action === 'TOGGLE_TOPBAR') {
       isVisible = !isVisible;
       iframe.style.display = isVisible ? 'block' : 'none';

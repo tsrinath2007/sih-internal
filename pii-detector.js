@@ -184,15 +184,16 @@
           let matchType = null;
           let matchedText = cleanText;
 
-          // 1. EMAIL (Standard or OCR-split email pattern)
-          if (
-            /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(cleanText) ||
-            /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(joinedNone) ||
-            /^[a-zA-Z0-9._%+-]+[\s]*[@©][\s]*[a-zA-Z0-9.-]+[\s]*\.[\s]*[a-zA-Z]{2,}$/.test(cleanText) ||
-            /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/.test(cleanText)
-          ) {
+          // 1. EMAIL (Standard, partial, OCR-split, or embedded in token)
+          const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i;
+          const emailSpacePattern = /[a-zA-Z0-9._%+-]+[\s]*[@©][\s]*[a-zA-Z0-9.-]+[\s]*\.[\s]*[a-zA-Z]{2,}/i;
+          const em1 = cleanText.match(emailPattern);
+          const em2 = joinedNone.match(emailPattern);
+          const em3 = cleanText.match(emailSpacePattern);
+
+          if (em1 || em2 || em3 || /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/.test(cleanText)) {
             matchType = 'EMAIL';
-            matchedText = cleanText;
+            matchedText = (em1 ? em1[0] : (em2 ? em2[0] : (em3 ? em3[0] : cleanText)));
           }
           // 2. PHONE (Indian numbers with +91, 10 digits starting with 6-9, or international)
           else if (

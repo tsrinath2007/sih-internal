@@ -278,6 +278,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
+      // 1. Request instant DOM text extraction from host page
+      const domWordsPromise = new Promise((resolve) => {
+        const timer = setTimeout(() => resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 }), 180);
+        function onDomWords(e) {
+          if (e.data && e.data.type === 'PARALLAX_DOM_WORDS_RESPONSE') {
+            clearTimeout(timer);
+            window.removeEventListener('message', onDomWords);
+            resolve({
+              words: e.data.words || [],
+              viewportWidth: e.data.viewportWidth || window.innerWidth,
+              viewportHeight: e.data.viewportHeight || window.innerHeight,
+              devicePixelRatio: e.data.devicePixelRatio || 1
+            });
+          }
+        }
+        window.addEventListener('message', onDomWords);
+        window.parent.postMessage({ type: 'PARALLAX_REQUEST_DOM_WORDS' }, '*');
+      });
+
       // Hide iframe cleanly so it is NEVER captured in the screenshot
       window.parent.postMessage({ type: 'PARALLAX_PREPARE_CAPTURE' }, '*');
       await new Promise((r) => setTimeout(r, 90));
@@ -307,7 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       // High-Speed Downscaled OCR Pre-processing
-      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1280);
+      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
 
       const worker = await getPersistentWorker();
       if (!worker) throw new Error('WASM Worker failed to initialize');
@@ -345,9 +364,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
       }).filter((w) => w.text.length > 0);
 
-      // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP)
-      const piiDetection = PIIDetector.detectPII(extractedWords, { confidenceThreshold: 80.0 });
-
       // Render Canvases OVER REAL SCREENSHOT IMAGE
       const img = new Image();
       await new Promise((resolve, reject) => {
@@ -355,6 +371,41 @@ document.addEventListener('DOMContentLoaded', async () => {
           try {
             const width = img.naturalWidth;
             const height = img.naturalHeight;
+
+            // Resolve DOM words and scale to canvas resolution
+            const domData = await domWordsPromise;
+            const domWords = domData.words || [];
+            const viewW = domData.viewportWidth || (window.innerWidth || 1280);
+            const viewH = domData.viewportHeight || (window.innerHeight || 800);
+            const scaleX = width / Math.max(1, viewW);
+            const scaleY = height / Math.max(1, viewH);
+
+            const scaledDomWords = domWords.map(w => ({
+              text: w.text,
+              confidence: w.confidence || 99,
+              bbox: {
+                x: Math.round(w.bbox.x * scaleX),
+                y: Math.round(w.bbox.y * scaleY),
+                width: Math.round(w.bbox.width * scaleX),
+                height: Math.round(w.bbox.height * scaleY)
+              }
+            }));
+
+            // High-Precision Word Fusion: DOM Words + OCR Words
+            const mergedWords = [...scaledDomWords];
+            for (const ow of extractedWords) {
+              const isCovered = scaledDomWords.some(dw => {
+                const dx = Math.abs(dw.bbox.x - ow.bbox.x);
+                const dy = Math.abs(dw.bbox.y - ow.bbox.y);
+                return dx < 35 && dy < 25;
+              });
+              if (!isCovered) {
+                mergedWords.push(ow);
+              }
+            }
+
+            // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP)
+            const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
 
             // 1. Original View: Real Webpage Image + Cyan Bounding Boxes
             if (origCanvas && origWrapper) {
@@ -368,7 +419,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               ctx.lineWidth = 2.5;
               ctx.strokeStyle = '#00f2fe';
               ctx.fillStyle = 'rgba(0, 242, 254, 0.15)';
-              for (const item of extractedWords) {
+              for (const item of mergedWords) {
                 const { x, y, width: bw, height: bh } = item.bbox;
                 ctx.strokeRect(x, y, bw, bh);
                 ctx.fillRect(x, y, bw, bh);
@@ -409,7 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             }
 
-            if (wordCount) wordCount.textContent = `${extractedWords.length} words`;
+            if (wordCount) wordCount.textContent = `${mergedWords.length} words`;
             if (redactCount) redactCount.textContent = `${piiDetection.matches.length} Redacted`;
             if (showcaseCount) showcaseCount.textContent = `${piiDetection.matches.length} SENSITIVE REGION${piiDetection.matches.length === 1 ? '' : 'S'} PROTECTED`;
             if (drawerBtnText) drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${piiDetection.matches.length} PII) ▼`;
@@ -466,10 +517,10 @@ document.addEventListener('DOMContentLoaded', async () => {
               resizeHostIframe(true);
             }
 
-            const sanitizedText = PIIDetector.generateSanitizedText(extractedWords, piiDetection.matches);
+            const sanitizedText = PIIDetector.generateSanitizedText(mergedWords, piiDetection.matches);
             currentScanData = {
               sanitized_ocr_text: sanitizedText,
-              extracted_words: extractedWords,
+              extracted_words: mergedWords,
               pii_matches: piiDetection.matches,
               status: piiDetection.status,
               is_blocked: piiDetection.isBlocked
