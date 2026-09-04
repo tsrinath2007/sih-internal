@@ -412,17 +412,21 @@
                 rawSlice.filter(w => unwrapUnicodeSmallText(w.text).replace(/\D/g, '').length >= 2).length >= 2 &&
                 computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
               ) ||
-              // 5. 3-Block Embossed Card (e.g. S476 7789875 5432, 547k 7h78,987k 5432)
+              // 5. 3-Block Embossed Card (e.g. S476 7789875 5432, 547k 7h78,987k 5432, S476 Msp S432)
               (
                 rawSlice.length === 3 &&
-                cleanNone.length >= 14 && cleanNone.length <= 18 &&
-                digits.length >= 8 &&
-                rawSlice.every(w => {
-                  const wt = unwrapUnicodeSmallText(w.text).replace(/[^a-zA-Z0-9]/g, '');
-                  return wt.length >= 3 && wt.length <= 10;
-                }) &&
-                rawSlice.filter(w => unwrapUnicodeSmallText(w.text).replace(/\D/g, '').length >= 2).length >= 2 &&
-                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
+                cleanNone.length >= 10 && cleanNone.length <= 18 &&
+                digits.length >= 5 &&
+                unwrapUnicodeSmallText(rawSlice[0].text).replace(/\D/g, '').length >= 2 &&
+                unwrapUnicodeSmallText(rawSlice[2].text).replace(/\D/g, '').length >= 2 &&
+                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100 &&
+                (
+                  (
+                    /^[45236Ss]/.test(unwrapUnicodeSmallText(rawSlice[0].text).replace(/[^a-zA-Z0-9]/g, '')) &&
+                    /\d{2,4}$/.test(unwrapUnicodeSmallText(rawSlice[2].text).replace(/[^a-zA-Z0-9]/g, ''))
+                  ) ||
+                  digits.length >= 8
+                )
               ) ||
               // 6. Standard Card Format regex with pure digits
               (/^(\d{4}[\s\-]?){3}\d{4}$/.test(cleanText)) ||

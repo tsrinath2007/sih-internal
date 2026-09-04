@@ -478,6 +478,26 @@ describe('PIIDetectorDOM Unit Tests', () => {
     const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
     expect(cardMatches.length).toBe(sheetCardNumbers.length);
   });
+
+  it('detects 3-block embossed cards even with severe OCR middle token degradation (S476 Msp S432)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const cardWords = [
+      { text: 'S476', confidence: 90, bbox: { x: 183, y: 99, width: 29, height: 17 } },
+      { text: 'Msp', confidence: 50, bbox: { x: 222, y: 99, width: 67, height: 10 } },
+      { text: 'S432', confidence: 90, bbox: { x: 299, y: 99, width: 28, height: 10 } }
+    ];
+
+    const result = PIIDetector.detectPII(cardWords);
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBe(1);
+
+    const match = cardMatches[0];
+    expect(match.matchedText).toBe('S476 Msp S432');
+    expect(match.bbox.x).toBe(183);
+    expect(match.bbox.width).toBe(144);
+  });
 });
 
 
