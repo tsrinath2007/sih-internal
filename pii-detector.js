@@ -391,8 +391,11 @@
           }
           // 9. PHONE (Indian, US, European (+33, +44, +49), and all international formats)
           else if (
-            !/[a-zA-Z]{2,}/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile|hotline|desk|fax):?\s*/i, '')) &&
             !/^(account|acc|routing|ifsc|pan|otp)/i.test(prevWord1) &&
+            !/^v?\d+(\.\d+)+$/i.test(cleanText) && // Reject software versions like v138.0.1, 2.0.4
+            !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanText) && // Reject IP addresses
+            /^[+]?[\d\s\-\(\)\.]+$/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile|hotline|desk|fax):?\s*/i, '')) &&
+            digits.length >= 7 && digits.length <= 15 &&
             (
               // International prefix with + (e.g. +33 1 42 68 55 00, +44 20 7946 0919, +1-888-555-0199, +91 98765 43210)
               (/^\+\d{1,4}[\s\-\.]?\(?\d{1,4}\)?([\s\-\.]?\d{1,4}){1,5}$/.test(cleanText) && digits.length >= 7 && digits.length <= 15) ||

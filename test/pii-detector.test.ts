@@ -219,6 +219,34 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(aadhaarMatch).toBeDefined();
     expect(aadhaarMatch.matchedText).toBe('7730 0889 2163');
   });
+
+  it('does not falsely detect PII on login screens, version strings, or game client UI', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const loginUiWords = [
+      { text: 'RIOT', confidence: 99, bbox: { x: 50, y: 50, width: 40, height: 16 } },
+      { text: 'GAMES', confidence: 99, bbox: { x: 95, y: 50, width: 50, height: 16 } },
+      { text: 'Sign-in', confidence: 99, bbox: { x: 50, y: 100, width: 60, height: 16 } },
+      { text: 'QR', confidence: 99, bbox: { x: 120, y: 100, width: 25, height: 16 } },
+      { text: 'Code', confidence: 99, bbox: { x: 150, y: 100, width: 35, height: 16 } },
+      { text: 'USERNAME', confidence: 99, bbox: { x: 50, y: 150, width: 70, height: 16 } },
+      { text: 'PASSWORD', confidence: 99, bbox: { x: 50, y: 200, width: 70, height: 16 } },
+      { text: 'Stay', confidence: 99, bbox: { x: 50, y: 250, width: 30, height: 16 } },
+      { text: 'signed', confidence: 99, bbox: { x: 85, y: 250, width: 45, height: 16 } },
+      { text: 'in', confidence: 99, bbox: { x: 135, y: 250, width: 15, height: 16 } },
+      { text: 'CAN\'T', confidence: 99, bbox: { x: 50, y: 300, width: 40, height: 16 } },
+      { text: 'SIGN', confidence: 99, bbox: { x: 95, y: 300, width: 35, height: 16 } },
+      { text: 'IN?', confidence: 99, bbox: { x: 135, y: 300, width: 25, height: 16 } },
+      { text: 'v138.0.1', confidence: 99, bbox: { x: 200, y: 300, width: 55, height: 16 } },
+      { text: 'PROTECTED', confidence: 99, bbox: { x: 50, y: 350, width: 75, height: 16 } },
+      { text: 'BY', confidence: 99, bbox: { x: 130, y: 350, width: 20, height: 16 } },
+      { text: 'HCAPTCHA', confidence: 99, bbox: { x: 155, y: 350, width: 70, height: 16 } }
+    ];
+
+    const result = PIIDetector.detectPII(loginUiWords);
+    expect(result.matches.length).toBe(0);
+  });
 });
 
 
