@@ -212,19 +212,48 @@
             matchType = 'EMAIL';
             matchedText = (em1 ? em1[0] : (em2 ? em2[0] : (em3 ? em3[0] : cleanText)));
           }
-          // 2. INDIAN PAN CARD (5 uppercase letters, 4 digits, 1 uppercase letter e.g. ABCDE1234F, XYZPQ9876R)
-          else if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(cleanNone)) {
+          // 2. INDIAN PAN CARD (5 letters, 4 digits, 1 letter e.g. ABCDE1234F, XYZPQ9876R)
+          else if (/^[a-zA-Z]{5}[0-9]{4}[a-zA-Z]$/i.test(cleanNone)) {
             matchType = 'PAN';
-            matchedText = cleanNone;
+            matchedText = cleanNone.toUpperCase();
           }
           // 3. BANK IFSC CODE (4 letters, 0, 6 alphanumeric e.g. HDFC0001234, SBIN0001234)
-          else if (/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanNone)) {
+          else if (/^[a-zA-Z]{4}[0oO][a-zA-Z0-9]{6}$/i.test(cleanNone)) {
             matchType = 'IFSC';
-            matchedText = cleanNone;
+            matchedText = cleanNone.toUpperCase();
           }
-          // 4. PHONE (Indian, US, European, French (+33), UK (+44), and all international formats)
+          // 4. PAYMENT CARD (13-19 digits: Luhn validated OR standard card format 4-4-4-4 / 4-6-5 with card prefix/keywords)
+          else if (
+            digits.length >= 13 && digits.length <= 19 &&
+            !/^(account|acc|wire|phone|tel)/i.test((line[i - 1]?.text || '')) &&
+            (
+              luhnCheck(digits) ||
+              (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
+              (/^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText)) ||
+              (/^(card|visa|mastercard|amex|debit|credit)/i.test((line[i - 1]?.text || ''))) ||
+              (/^(card|visa|mastercard|amex|debit|credit)/i.test((line[i - 2]?.text || '')))
+            )
+          ) {
+            matchType = 'CARD';
+            matchedText = joinedSpace;
+          }
+          // 5. BANK ACCOUNT NUMBERS (9-18 digits preceded by Account, Acc, A/C, Wire, Beneficiary, Settlement keywords)
+          else if (
+            digits.length >= 9 && digits.length <= 18 &&
+            (
+              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban|routing)/i.test((line[i - 1]?.text || '')) ||
+              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban|routing)/i.test((line[i - 2]?.text || '')) ||
+              /^(account|acc|a\/c|beneficiary|settlement)/i.test(cleanText) ||
+              /^ACCOUNT[\s\:\#]+\d{9,18}$/i.test(cleanText)
+            )
+          ) {
+            matchType = 'ACCOUNT_NUM';
+            matchedText = joinedSpace;
+          }
+          // 6. PHONE (Indian, US, European (+33, +44, +49), and all international formats)
           else if (
             !/[a-zA-Z]{2,}/.test(cleanText.replace(/^(tel|phone|ph|mob|mobile|hotline|desk|fax):?\s*/i, '')) &&
+            !/^(account|acc|routing|ifsc|pan|otp)/i.test((line[i - 1]?.text || '')) &&
             (
               // International prefix with + (e.g. +33 1 42 68 55 00, +44 20 7946 0919, +1-888-555-0199, +91 98765 43210)
               (/^\+\d{1,4}[\s\-\.]?\(?\d{1,4}\)?([\s\-\.]?\d{1,4}){1,5}$/.test(cleanText) && digits.length >= 7 && digits.length <= 15) ||
@@ -235,35 +264,11 @@
               (digits.length === 10 && /^[6-9]/.test(digits) && /^[\+\d\s\-\(\)\.]+$/.test(cleanText)) ||
               /^\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText) ||
               /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText) ||
-              /^1[-.\s]?800[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText)
+              /^1[-.\s]?800[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText) ||
+              /^\+1[-.\s]?888[-.\s]?\d{3}[-.\s]?\d{4}$/.test(cleanText)
             )
           ) {
             matchType = 'PHONE';
-            matchedText = joinedSpace;
-          }
-          // 5. PAYMENT CARD (13-19 digits: Luhn validated OR standard card format with card prefix/keywords)
-          else if (
-            digits.length >= 13 && digits.length <= 19 &&
-            (
-              luhnCheck(digits) ||
-              (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
-              (/^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText)) ||
-              (/^(card|visa|mastercard|amex|debit|credit)/i.test((line[i - 1]?.text || '')))
-            )
-          ) {
-            matchType = 'CARD';
-            matchedText = joinedSpace;
-          }
-          // 6. BANK ACCOUNT NUMBERS (9-18 digits preceded by Account, Acc, A/C, Wire, Beneficiary or settlement keywords)
-          else if (
-            digits.length >= 9 && digits.length <= 18 &&
-            (
-              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban)/i.test((line[i - 1]?.text || '')) ||
-              /^(account|acc|a\/c|beneficiary|settlement|wire|acct|iban)/i.test((line[i - 2]?.text || '')) ||
-              /^(account|acc|a\/c)/i.test(cleanText)
-            )
-          ) {
-            matchType = 'ACCOUNT_NUM';
             matchedText = joinedSpace;
           }
           // 7. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP, excluding calendar years)
