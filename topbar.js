@@ -781,6 +781,91 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  const chatHistory = [];
+  const ptbChatHistory = document.getElementById('ptbChatHistory');
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function renderPtbChatHistory() {
+    if (!ptbChatHistory) return;
+    if (chatHistory.length === 0) {
+      ptbChatHistory.innerHTML = `<div class="ptb-approval-content" id="ptbProposedText" style="color: #64748b;">No conversation history yet. Send sanitized context to start.</div>`;
+      return;
+    }
+
+    let html = '';
+    for (const item of chatHistory) {
+      if (item.type === 'user') {
+        html += `
+          <div class="chat-msg-user">
+            <div class="chat-msg-user-hdr">
+              <span>👤 OPERATOR QUERY</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #64748b;">${item.timestamp}</span>
+            </div>
+            <div class="chat-msg-user-text">${escapeHtml(item.text)}</div>
+          </div>
+        `;
+      } else if (item.type === 'thinking') {
+        html += `
+          <div class="chat-msg-thinking">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="ptb-spin" style="animation: ptbPulse 1s infinite;">
+              <circle cx="12" cy="12" r="10" stroke-opacity="0.3"></circle>
+              <path d="M12 2a10 10 0 0 1 10 10"></path>
+            </svg>
+            <span>${escapeHtml(item.text)}</span>
+          </div>
+        `;
+      } else if (item.type === 'ai') {
+        const d = item.data;
+        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 700; border: 1px solid rgba(0, 242, 254, 0.3);">🤖 ${escapeHtml(d.model || 'openai/gpt-oss-120b (Groq Live)')}</span>`;
+        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3);">${Math.round((d.confidence || 0.98) * 100)}% Conf</span>`;
+        const actionTypeStr = (d.action_type || 'GUIDANCE').toUpperCase();
+
+        html += `
+          <div class="chat-msg-ai">
+            <div class="chat-msg-ai-hdr">
+              <div class="chat-msg-ai-title">
+                <span>🤖 LIVE AI AGENT</span>
+                <span class="ptb-action-tag" style="font-size: 10px; padding: 2px 7px;">${actionTypeStr}</span>
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                ${modelBadge}
+                ${confidenceBadge}
+              </div>
+            </div>
+            <div class="ptb-approval-content">
+              <div style="font-size: 11px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">💡 Cloud LLM Rationale &amp; Perception:</div>
+              <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(d.rationale || d.content || '')}</div>
+              ${d.selector ? `
+                <div style="margin-top: 10px; font-size: 12px; color: #cbd5e1; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
+                  <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">${escapeHtml(d.action_type || 'fill_field')} -&gt; ${escapeHtml(d.selector)}</code>
+                  ${d.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${escapeHtml(d.value)}"</span>` : ''}
+                </div>
+              ` : ''}
+              <div style="font-size: 10.5px; color: #38bdf8; margin-top: 8px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; padding: 5px 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
+                <span>🖼️ Redacted Image Sent: <strong>${d.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
+                <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    ptbChatHistory.innerHTML = html;
+    setTimeout(() => {
+      ptbChatHistory.scrollTop = ptbChatHistory.scrollHeight;
+    }, 20);
+  }
+
   // Handle Send to Backend
   if (sendBtn) {
     sendBtn.addEventListener('click', async () => {
@@ -820,6 +905,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       setStatus('Consulting AI Agent...', 'processing');
       sendBtn.disabled = true;
+
+      // Add user message & thinking indicator to chat history
+      const queryText = customPrompt || (selectedTask === 'auto_guide' ? 'Guide: Analyze page and determine next optimal action' : `Task: ${selectedTask}`);
+      chatHistory.push({
+        type: 'user',
+        text: queryText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      chatHistory.push({
+        type: 'thinking',
+        text: 'Consulting Live Cloud LLM with sanitized on-device context...'
+      });
+
+      if (approvalCard) {
+        approvalCard.classList.add('open');
+      }
+      renderPtbChatHistory();
 
       try {
         const payload = {
@@ -864,30 +966,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (approveBtn) approveBtn.disabled = false;
         if (rejectBtn) rejectBtn.disabled = false;
 
-        if (proposedText) {
-          const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
-          const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
-
-          proposedText.innerHTML = `
-            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
-              ${modelBadge}
-              ${confidenceBadge}
-              <span style="font-size: 11.5px; color: #94a3b8; margin-left: 2px;">Goal: <strong style="color: #f8fafc;">${data.goal_state || 'Form Automation'}</strong></span>
-            </div>
-            <div style="background: #030712; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
-              <div style="font-size: 11.5px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">🤖 Live Cloud LLM Rationale:</div>
-              <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6;">"${data.rationale || data.content}"</div>
-            </div>
-            <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
-              <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 3px 8px; border-radius: 5px; font-family: var(--font-mono); font-size: 11.5px;">${data.action_type || 'fill_field'} -> ${data.selector}</code> 
-              ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${data.value}"</span>` : ''}
-            </div>
-            <div style="font-size: 11px; color: #38bdf8; margin-top: 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-              <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
-              <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
-            </div>
-          `;
+        // Replace thinking indicator with AI response
+        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+        if (thinkingIdx !== -1) {
+          chatHistory.splice(thinkingIdx, 1);
         }
+        chatHistory.push({
+          type: 'ai',
+          data: data,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+        renderPtbChatHistory();
 
         if (approvalCard) {
           approvalCard.classList.add('open');
@@ -903,6 +992,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       } catch (err) {
         console.error('[Parallax] Backend Error:', err);
+        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+        if (thinkingIdx !== -1) {
+          chatHistory.splice(thinkingIdx, 1);
+        }
+        chatHistory.push({
+          type: 'ai',
+          data: {
+            action_type: 'ERROR',
+            model: 'Parallax Error',
+            confidence: 0,
+            rationale: `Failed to consult AI agent: ${err.message}. Ensure backend is running with "node server.js".`
+          },
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+        renderPtbChatHistory();
         setStatus(`Backend Error: ${err.message}`, 'error');
       } finally {
         if (sendBtn) sendBtn.disabled = false;
@@ -999,13 +1103,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!currentScanData) return;
 
-    if (proposedText) {
-      proposedText.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px; color: #00f2fe; padding: 12px 6px;">
-          <span style="font-size: 12px; font-weight: 700;">🤖 Consulting Live Cloud LLM on: "${query}"...</span>
-        </div>
-      `;
-    }
+    // Append user question and thinking indicator to chatHistory
+    chatHistory.push({
+      type: 'user',
+      text: query,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    });
+    chatHistory.push({
+      type: 'thinking',
+      text: `Consulting Live Cloud LLM on: "${query}"...`
+    });
+    renderPtbChatHistory();
+    followupInput.value = '';
 
     if (followupBtn) followupBtn.disabled = true;
     if (approveBtn) approveBtn.disabled = true;
@@ -1048,35 +1157,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (approveBtn) approveBtn.disabled = false;
       if (rejectBtn) rejectBtn.disabled = false;
 
-      if (proposedText) {
-        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
-        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
-
-        proposedText.innerHTML = `
-          <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
-            ${modelBadge}
-            ${confidenceBadge}
-            <span style="font-size: 11.5px; color: #94a3b8; margin-left: 2px;">Goal: <strong style="color: #f8fafc;">${data.goal_state || 'AI Guidance'}</strong></span>
-          </div>
-          <div style="background: #030712; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
-            <div style="font-size: 11.5px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">🤖 Live Cloud LLM Response:</div>
-            <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6;">"${data.rationale || data.content}"</div>
-          </div>
-          <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
-            <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 3px 8px; border-radius: 5px; font-family: var(--font-mono); font-size: 11.5px;">${data.action_type || 'auto_guide'} -> ${data.selector}</code> 
-            ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${data.value}"</span>` : ''}
-          </div>
-          <div style="font-size: 11px; color: #38bdf8; margin-top: 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-            <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
-            <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
-          </div>
-        `;
+      // Replace thinking indicator with AI response
+      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+      if (thinkingIdx !== -1) {
+        chatHistory.splice(thinkingIdx, 1);
       }
-      followupInput.value = '';
+      chatHistory.push({
+        type: 'ai',
+        data: data,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      renderPtbChatHistory();
       setStatus('Follow-up Answered', 'ready');
 
     } catch (err) {
       console.error('[Parallax] Follow-up Error:', err);
+      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+      if (thinkingIdx !== -1) {
+        chatHistory.splice(thinkingIdx, 1);
+      }
+      chatHistory.push({
+        type: 'ai',
+        data: {
+          action_type: 'ERROR',
+          model: 'Parallax Error',
+          confidence: 0,
+          rationale: `Follow-up error: ${err.message}`
+        },
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      renderPtbChatHistory();
       setStatus(`Follow-up Error: ${err.message}`, 'error');
     } finally {
       if (followupBtn) followupBtn.disabled = false;

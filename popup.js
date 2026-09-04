@@ -687,6 +687,91 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  const chatHistory = [];
+  const popupChatHistory = document.getElementById('popupChatHistory');
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function renderPopupChatHistory() {
+    if (!popupChatHistory) return;
+    if (chatHistory.length === 0) {
+      popupChatHistory.innerHTML = `<div id="proposedActionText" class="proposed-action-content" style="color: #64748b;">No conversation history yet. Send sanitized context to start.</div>`;
+      return;
+    }
+
+    let html = '';
+    for (const item of chatHistory) {
+      if (item.type === 'user') {
+        html += `
+          <div class="chat-msg-user">
+            <div class="chat-msg-user-hdr">
+              <span>👤 OPERATOR QUERY</span>
+              <span style="font-family: var(--font-mono); font-size: 10px; color: #64748b;">${item.timestamp}</span>
+            </div>
+            <div class="chat-msg-user-text">${escapeHtml(item.text)}</div>
+          </div>
+        `;
+      } else if (item.type === 'thinking') {
+        html += `
+          <div class="chat-msg-thinking">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="ptb-spin" style="animation: spin 1s infinite linear;">
+              <circle cx="12" cy="12" r="10" stroke-opacity="0.3"></circle>
+              <path d="M12 2a10 10 0 0 1 10 10"></path>
+            </svg>
+            <span>${escapeHtml(item.text)}</span>
+          </div>
+        `;
+      } else if (item.type === 'ai') {
+        const d = item.data;
+        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; border: 1px solid rgba(0, 242, 254, 0.3);">🤖 ${escapeHtml(d.model || 'openai/gpt-oss-120b (Groq Live)')}</span>`;
+        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3);">${Math.round((d.confidence || 0.98) * 100)}% Conf</span>`;
+        const actionTypeStr = (d.action_type || 'GUIDANCE').toUpperCase();
+
+        html += `
+          <div class="chat-msg-ai">
+            <div class="chat-msg-ai-hdr">
+              <div class="chat-msg-ai-title">
+                <span>🤖 LIVE AI AGENT</span>
+                <span class="action-tag" style="font-size: 9.5px; padding: 2px 6px;">${actionTypeStr}</span>
+              </div>
+              <div style="display: flex; gap: 5px; align-items: center;">
+                ${modelBadge}
+                ${confidenceBadge}
+              </div>
+            </div>
+            <div class="proposed-action-content">
+              <div style="font-size: 11px; color: #00f2fe; font-weight: 700; margin-bottom: 5px; letter-spacing: 0.3px;">💡 Cloud LLM Rationale &amp; Perception:</div>
+              <div style="font-size: 12px; color: #f8fafc; line-height: 1.55; white-space: pre-wrap;">${escapeHtml(d.rationale || d.content || '')}</div>
+              ${d.selector ? `
+                <div style="margin-top: 8px; font-size: 11.5px; color: #cbd5e1; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08);">
+                  <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 2px 5px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px;">${escapeHtml(d.action_type || 'fill_field')} -&gt; ${escapeHtml(d.selector)}</code>
+                  ${d.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${escapeHtml(d.value)}"</span>` : ''}
+                </div>
+              ` : ''}
+              <div style="font-size: 10px; color: #38bdf8; margin-top: 8px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 5px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
+                <span>🖼️ Redacted Image: <strong>${d.payload_proof?.redacted_image_kb || 42} KB</strong></span>
+                <span>🔒 Raw PII: <strong style="color: #10b981;">0 Bytes</strong></span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    popupChatHistory.innerHTML = html;
+    setTimeout(() => {
+      popupChatHistory.scrollTop = popupChatHistory.scrollHeight;
+    }, 20);
+  }
+
   // Handle "Send Sanitized Context" button click (Real Backend API Call)
   if (sendBtn) {
     sendBtn.addEventListener('click', async () => {
@@ -727,6 +812,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
       if (promptError) promptError.style.display = 'none';
+
+      // Push user query & thinking indicator into chatHistory
+      const queryText = customPrompt || (selectedTask === 'auto_guide' ? 'Guide: Analyze page and determine next optimal action' : `Task: ${selectedTask}`);
+      chatHistory.push({
+        type: 'user',
+        text: queryText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      chatHistory.push({
+        type: 'thinking',
+        text: 'Consulting Live Cloud LLM with sanitized on-device context...'
+      });
+
+      if (approvalCard) {
+        approvalCard.style.display = 'flex';
+      }
+      renderPopupChatHistory();
 
       const payload = {
         sanitized_ocr_text: currentScanData.sanitized_ocr_text,
@@ -776,42 +878,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (approveBtn) approveBtn.disabled = false;
         if (rejectBtn) rejectBtn.disabled = false;
 
-        if (proposedActionText) {
-          const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
-          const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
-
-          proposedActionText.innerHTML = `
-            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
-              ${modelBadge}
-              ${confidenceBadge}
-              <span style="font-size: 11.5px; color: #94a3b8; margin-left: 2px;">Goal: <strong style="color: #f8fafc;">${data.goal_state || 'Form Automation'}</strong></span>
-            </div>
-            <div style="background: #030712; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
-              <div style="font-size: 11.5px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">🤖 Live Cloud LLM Rationale:</div>
-              <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6;">"${data.rationale || data.content}"</div>
-            </div>
-            <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
-              <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 3px 8px; border-radius: 5px; font-family: var(--font-mono); font-size: 11.5px;">${data.action_type || 'fill_field'} -> ${data.selector}</code> 
-              ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${data.value}"</span>` : ''}
-            </div>
-            <div style="font-size: 11px; color: #38bdf8; margin-top: 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-              <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
-              <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
-            </div>
-          `;
+        // Replace thinking indicator with AI response
+        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+        if (thinkingIdx !== -1) {
+          chatHistory.splice(thinkingIdx, 1);
         }
+        chatHistory.push({
+          type: 'ai',
+          data: data,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+        renderPopupChatHistory();
 
         if (approvalCard) {
           approvalCard.style.display = 'flex';
-          approvalCard.scrollIntoView({ behavior: 'smooth' });
+          setTimeout(() => {
+            approvalCard.scrollIntoView({ behavior: 'smooth' });
+          }, 50);
         }
 
       } catch (err) {
         console.error('[Parallax] Failed to send sanitized context to backend:', err);
+        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+        if (thinkingIdx !== -1) {
+          chatHistory.splice(thinkingIdx, 1);
+        }
+        chatHistory.push({
+          type: 'ai',
+          data: {
+            action_type: 'ERROR',
+            model: 'Parallax Error',
+            confidence: 0,
+            rationale: `Failed to consult AI agent: ${err.message}. Ensure backend is running with "node server.js".`
+          },
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+        renderPopupChatHistory();
+
         const isOffline = err.message && (err.message.includes('Failed to fetch') || err.message.includes('offline'));
         const errorMsg = isOffline ? 'Backend Offline: Start backend with "npm start" (http://localhost:3001)' : `Backend Error: ${err.message}`;
         setStatus(errorMsg, 'error');
         if (auditActionStatus) auditActionStatus.textContent = isOffline ? 'Backend Offline' : 'Backend Error';
+      } finally {
         sendBtn.disabled = false;
       }
     });
@@ -960,13 +1068,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (!currentScanData) return;
 
-    if (proposedActionText) {
-      proposedActionText.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px; color: #00f2fe; padding: 10px 4px;">
-          <span style="font-size: 11.5px; font-weight: 700;">🤖 Consulting Live Cloud LLM on: "${query}"...</span>
-        </div>
-      `;
-    }
+    // Append user question & thinking indicator into chatHistory
+    chatHistory.push({
+      type: 'user',
+      text: query,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    });
+    chatHistory.push({
+      type: 'thinking',
+      text: `Consulting Live Cloud LLM on: "${query}"...`
+    });
+    renderPopupChatHistory();
+    popupFollowupInput.value = '';
 
     if (popupFollowupBtn) popupFollowupBtn.disabled = true;
     if (approveBtn) approveBtn.disabled = true;
@@ -1010,35 +1123,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (approveBtn) approveBtn.disabled = false;
       if (rejectBtn) rejectBtn.disabled = false;
 
-      if (proposedActionText) {
-        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
-        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
-
-        proposedActionText.innerHTML = `
-          <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
-            ${modelBadge}
-            ${confidenceBadge}
-            <span style="font-size: 11.5px; color: #94a3b8; margin-left: 2px;">Goal: <strong style="color: #f8fafc;">${data.goal_state || 'AI Guidance'}</strong></span>
-          </div>
-          <div style="background: #030712; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
-            <div style="font-size: 11.5px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">🤖 Live Cloud LLM Response:</div>
-            <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6;">"${data.rationale || data.content}"</div>
-          </div>
-          <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
-            <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 3px 8px; border-radius: 5px; font-family: var(--font-mono); font-size: 11.5px;">${data.action_type || 'auto_guide'} -> ${data.selector}</code> 
-            ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${data.value}"</span>` : ''}
-          </div>
-          <div style="font-size: 11px; color: #38bdf8; margin-top: 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-            <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
-            <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
-          </div>
-        `;
+      // Replace thinking indicator with AI response
+      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+      if (thinkingIdx !== -1) {
+        chatHistory.splice(thinkingIdx, 1);
       }
-      popupFollowupInput.value = '';
+      chatHistory.push({
+        type: 'ai',
+        data: data,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      renderPopupChatHistory();
       setStatus('Follow-up Answered', 'ready');
 
     } catch (err) {
       console.error('[Parallax] Popup Follow-up Error:', err);
+      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
+      if (thinkingIdx !== -1) {
+        chatHistory.splice(thinkingIdx, 1);
+      }
+      chatHistory.push({
+        type: 'ai',
+        data: {
+          action_type: 'ERROR',
+          model: 'Parallax Error',
+          confidence: 0,
+          rationale: `Follow-up error: ${err.message}`
+        },
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      renderPopupChatHistory();
       setStatus(`Follow-up Error: ${err.message}`, 'error');
     } finally {
       if (popupFollowupBtn) popupFollowupBtn.disabled = false;

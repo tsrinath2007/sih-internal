@@ -20,15 +20,12 @@ app.use(express.static('test-pages'));
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
-const GROK_SYSTEM_PROMPT = `You are a browser guidance agent. The screen you receive has already been
-sanitized locally; masked boxes, placeholders, and surrogate values represent
-hidden sensitive information. Treat them as intentional privacy protections,
-never ask to reveal originals, and reason only from the sanitized view.
+const GROK_SYSTEM_PROMPT = `You are a privacy-preserving browser perception & guidance agent.
+The webpage text you receive has already been sanitized locally on-device: masked placeholders (e.g. [REDACTED EMAIL], [REDACTED PHONE], [REDACTED CARD], [REDACTED OTP], etc.) represent hidden sensitive PII that was safely removed.
+Treat them as intentional privacy protections, never ask to reveal originals, and reason directly from the sanitized OCR text.
 
-For each screen, first summarize what the page appears to be, then state the
-user's likely current step, then propose the next safest action. If
-information is missing because of masking, say exactly what is missing and
-continue with the best privacy-preserving guidance possible.
+You have full visibility into the live sanitized text extracted from the current webpage.
+When the user asks a question about what is on the page (such as whether a specific heading like 'References', a section, a button, a table, or a form field exists), analyze the provided Sanitized Page OCR Text thoroughly and answer accurately, definitively, and directly in "rationale".
 
 IMPORTANT FIELD VALIDATION:
 Check if any filled or redacted values contradict their form field labels (e.g. an [EMAIL] entered into a 'Roll Number' or 'Phone' field). If there is a mismatch, add an item to risk_flags (e.g. 'mismatch: Roll Number field contains an email address') and highlight the warning in rationale so the user can fix it before submitting.
@@ -101,15 +98,31 @@ app.post('/analyze', async (req, res) => {
     // 1. Call Live Cloud LLM (Groq)
     console.log('🤖 Querying Live Cloud LLM (openai/gpt-oss-120b) via Groq API...');
 
-    const promptUserText = user_prompt || `
+    const pageContext = sanitized_ocr_text
+      ? `Sanitized Page OCR Text (Live text extracted locally from current viewport):\n"""\n${sanitized_ocr_text}\n"""`
+      : `Sanitized Page OCR Text:\n"""\nApex Financial Services. Account Details. [REDACTED EMAIL], [REDACTED PHONE], [REDACTED CARD], [REDACTED OTP]. Target input field: #city.\n"""`;
+
+    let promptUserText = '';
+    if (user_prompt) {
+      promptUserText = `
+User Question / Instruction:
+"${user_prompt}"
+
+${pageContext}
+
+INSTRUCTIONS:
+1. Examine the provided Sanitized Page OCR Text carefully. If the user asks whether specific words, headings (e.g. 'References', 'Bibliography', titles, fields, etc.), or content are present on the page, check the text directly and state your answer clearly and definitively in "rationale".
+2. Propose the safest next action and goal state in the requested JSON structure.
+`;
+    } else {
+      promptUserText = `
 Task requested by user: ${task === 'fill_field' ? 'Analyze page and determine the safest next form fill action.' : 'Summarize sanitized page content.'}
-Sanitized Page OCR Text:
-"""
-${sanitized_ocr_text || 'Apex Financial Services. Account Details. [REDACTED EMAIL], [REDACTED PHONE], [REDACTED CARD], [REDACTED OTP]. Target input field: #city.'}
-"""
+
+${pageContext}
 
 Please reason over this sanitized view and output the structured JSON action guidance.
 `;
+    }
 
     const llmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
