@@ -128,5 +128,27 @@ describe('PIIDetectorDOM Unit Tests', () => {
     const emailMatch = result.matches.find((m: any) => m.type === 'EMAIL');
     expect(emailMatch?.matchedText).toBe('john.doe@gmail.com');
   });
+
+  it('refines large photo bounding boxes to pinpoint the face region', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const matches = [
+      {
+        type: 'AVATAR',
+        bbox: { x: 100, y: 100, width: 600, height: 450 },
+        confidence: 98.0
+      }
+    ];
+
+    const dummyImg = { width: 1280, height: 800 };
+    const refined = PIIDetector.refineFaceBoundingBoxes(matches, dummyImg, 1280, 800);
+
+    expect(refined.length).toBe(1);
+    // Face bbox should be much smaller than the 600x450 photo container
+    expect(refined[0].bbox.width).toBeLessThan(600);
+    expect(refined[0].bbox.height).toBeLessThan(450);
+  });
 });
+
 

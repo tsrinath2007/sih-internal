@@ -399,8 +399,117 @@
     return tokens.join(' ');
   }
 
+  /**
+   * Refines avatar / photo bounding boxes to pinpoint the exact face region
+   * For small avatars (<= 120px), keeps the tight icon circle.
+   * For larger photos/portraits/webcam shots, locates the face oval via skin cluster & facial geometry
+   */
+  function refineFaceBoundingBoxes(matches, img, canvasW, canvasH) {
+    if (!matches || !Array.isArray(matches) || !img) return matches;
+
+    for (const match of matches) {
+      if (match.type !== 'AVATAR') continue;
+
+      const { x, y, width: bw, height: bh } = match.bbox;
+      // If it's already a small circular/square avatar icon (<= 120px), keep the exact badge
+      if (bw <= 120 && bh <= 120) continue;
+
+      const px = Math.max(0, x);
+      const py = Math.max(0, y);
+      const pw = Math.min(canvasW - px, bw);
+      const ph = Math.min(canvasH - py, bh);
+
+      if (pw < 40 || ph < 40) continue;
+
+      try {
+        const sampleW = Math.min(160, Math.max(40, Math.round(pw / 4)));
+        const sampleH = Math.min(160, Math.max(40, Math.round(ph / 4)));
+        const off = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
+        if (!off) continue;
+
+        off.width = sampleW;
+        off.height = sampleH;
+        const oCtx = off.getContext('2d', { willReadFrequently: true });
+        oCtx.drawImage(img, px, py, pw, ph, 0, 0, sampleW, sampleH);
+
+        const imgData = oCtx.getImageData(0, 0, sampleW, sampleH);
+        const data = imgData.data;
+
+        let minSkinX = sampleW, maxSkinX = 0, minSkinY = sampleH, maxSkinY = 0;
+        let skinCount = 0;
+
+        // Scan upper 70% of image for face skin-tone pixels
+        for (let sy = 0; sy < Math.round(sampleH * 0.75); sy++) {
+          for (let sx = 0; sx < sampleW; sx++) {
+            const idx = (sy * sampleW + sx) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+
+            // Robust multi-ethnicity human skin classifier
+            const isSkin = (
+              r > 55 && g > 30 && b > 15 &&
+              r > g && g > b &&
+              (r - g) >= 6 &&
+              (r - b) >= 10 &&
+              Math.abs(r - g) < 140
+            );
+
+            if (isSkin) {
+              skinCount++;
+              if (sx < minSkinX) minSkinX = sx;
+              if (sx > maxSkinX) maxSkinX = sx;
+              if (sy < minSkinY) minSkinY = sy;
+              if (sy > maxSkinY) maxSkinY = sy;
+            }
+          }
+        }
+
+        const minThreshold = sampleW * sampleH * 0.015;
+        if (skinCount > minThreshold && maxSkinX > minSkinX && maxSkinY > minSkinY) {
+          const skinW = maxSkinX - minSkinX;
+          const skinH = maxSkinY - minSkinY;
+
+          // Pad slightly around face to capture hairline, glasses, and chin
+          const padX = Math.round(skinW * 0.15);
+          const padY = Math.round(skinH * 0.18);
+          const relX = Math.max(0, minSkinX - padX);
+          const relY = Math.max(0, minSkinY - padY);
+          const relW = Math.min(sampleW - relX, skinW + padX * 2);
+          const relH = Math.min(sampleH - relY, skinH + padY * 2);
+
+          const scaleX = pw / sampleW;
+          const scaleY = ph / sampleH;
+
+          match.bbox = {
+            x: Math.round(px + relX * scaleX),
+            y: Math.round(py + relY * scaleY),
+            width: Math.round(relW * scaleX),
+            height: Math.round(relH * scaleY)
+          };
+        } else {
+          // Centered upper-third portrait fallback for face
+          const fw = Math.round(pw * 0.45);
+          const fh = Math.round(ph * 0.45);
+          const fx = Math.round(px + (pw - fw) / 2);
+          const fy = Math.round(py + ph * 0.12);
+          match.bbox = { x: fx, y: fy, width: fw, height: fh };
+        }
+      } catch (err) {
+        // Fallback to upper-center portrait face box
+        const fw = Math.round(pw * 0.45);
+        const fh = Math.round(ph * 0.45);
+        const fx = Math.round(px + (pw - fw) / 2);
+        const fy = Math.round(py + ph * 0.12);
+        match.bbox = { x: fx, y: fy, width: fw, height: fh };
+      }
+    }
+    return matches;
+  }
+
   return {
     detectPII,
+    refineFaceBoundingBoxes,
     generateSanitizedText,
     luhnCheck
   };

@@ -333,6 +333,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
+        
+        // Pinpoint exact face regions for any photographic avatar matches
+        if (typeof PIIDetector.refineFaceBoundingBoxes === 'function') {
+          piiDetection.matches = PIIDetector.refineFaceBoundingBoxes(piiDetection.matches, img, width, height);
+        }
+
         console.log('🛡️ [Parallax] PII Detection Output:', piiDetection);
 
         // 1. Render Original Canvas: Visual Hierarchy (Faint gray for non-PII, bold red/orange #E8491A for PII)

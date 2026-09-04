@@ -459,8 +459,13 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             }
 
-            // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP)
+            // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP, AVATAR)
             const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
+
+            // Pinpoint exact face regions for any photographic avatar matches
+            if (typeof PIIDetector.refineFaceBoundingBoxes === 'function') {
+              piiDetection.matches = PIIDetector.refineFaceBoundingBoxes(piiDetection.matches, img, width, height);
+            }
 
             // 1. Original View: Visual Hierarchy (Faint gray for non-PII, bold red/orange #E8491A for PII)
             if (origCanvas && origWrapper) {
