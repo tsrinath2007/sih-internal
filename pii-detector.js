@@ -176,14 +176,16 @@
       } else {
         result = result.filter(w => /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(unwrapUnicodeSmallText(w.text)));
       }
-    } else if (type === 'CARD' || type === 'AADHAAR') {
+    } else if (type === 'CARD') {
+      // Keep entire matched card token slice (including OCR confusable digits and embossed blocks)
+    } else if (type === 'AADHAAR') {
       while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[0].text))) {
         result.shift();
       }
       while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[result.length - 1].text))) {
         result.pop();
       }
-      result = result.filter(w => /[\d\-\/]/.test(unwrapUnicodeSmallText(w.text)));
+      result = result.filter(w => /[\d\-]/.test(unwrapUnicodeSmallText(w.text)));
     } else if (type === 'PHONE') {
       while (result.length > 0 && !/[\d+]/.test(unwrapUnicodeSmallText(result[0].text))) {
         result.shift();
@@ -239,11 +241,13 @@
         return otpTriggerKeywords.includes(clean);
       });
 
-    // Document-level Card Context Detection (detects credit/debit card brands or keywords anywhere in image/DOM)
-    const cardTriggerKeywords = ['card', 'barclaycard', 'barclays', 'mastercard', 'master', 'visa', 'amex', 'american express', 'debit', 'credit', 'rupay', 'discover', 'diners', 'maestro', 'jcb', 'business', 'valid', 'thru'];
+    // Document-level Card Context Detection (detects credit/debit card brands, expiry dates, or keywords anywhere in image/DOM)
+    const cardTriggerKeywords = ['card', 'barclaycard', 'barclays', 'mastercard', 'master', 'visa', 'amex', 'american express', 'debit', 'credit', 'rupay', 'discover', 'diners', 'maestro', 'jcb', 'business', 'valid', 'thru', 'company', 'cardholder'];
     const hasDocumentCardContext = words.some(w => {
       const clean = unwrapUnicodeSmallText(w.text || '').toLowerCase().replace(/[^a-z]/g, '');
-      return cardTriggerKeywords.some(k => clean.includes(k));
+      const isCardWord = cardTriggerKeywords.some(k => clean.includes(k));
+      const isCardDate = /^(0[1-9]|1[0-2])[\/\-]\d{2,4}/.test(unwrapUnicodeSmallText(w.text || ''));
+      return isCardWord || isCardDate;
     });
 
     // Group words into lines by Y position
@@ -386,28 +390,39 @@
           }
           // 6. PAYMENT CARD (13-19 digits: Luhn validated OR 4x4 / 4-6-5 blocks OR 15-16 digits with card prefixes/context/mock cards/OCR repair)
           else if (
-            (digits.length >= 13 && digits.length <= 19 || repairedDigits.length >= 13 && repairedDigits.length <= 19) &&
             !/^(account|acc|wire|phone|tel|ifsc|pan|dob)/i.test(prevWord1) &&
             (
-              luhnCheck(digits) ||
-              luhnCheck(repairedDigits) ||
-              (digits.length === 16 && (/^[2-6]/.test(digits) || /^(\d{4}[\s\-]?){4}$/.test(cleanText) || rawSlice.length === 4)) ||
-              (repairedDigits.length === 16 && (/^[2-6]/.test(repairedDigits) || rawSlice.length >= 3)) ||
-              (digits.length === 15 && (/^3[47]/.test(digits) || /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText))) ||
-              (repairedDigits.length === 15 && (/^[2-6]|3[47]/.test(repairedDigits) || hasDocumentCardContext)) ||
-              (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
-              (hasDocumentCardContext && (repairedDigits.length >= 13 && repairedDigits.length <= 19)) ||
-              /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord1) ||
-              /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord2)
+              (((digits.length >= 13 && digits.length <= 19) || (repairedDigits.length >= 13 && repairedDigits.length <= 19)) && (
+                luhnCheck(digits) ||
+                luhnCheck(repairedDigits) ||
+                (digits.length === 16 && (/^[2-6]/.test(digits) || /^(\d{4}[\s\-]?){4}$/.test(cleanText) || rawSlice.length === 4)) ||
+                (repairedDigits.length === 16 && (/^[2-6]/.test(repairedDigits) || rawSlice.length >= 3)) ||
+                (digits.length === 15 && (/^3[47]/.test(digits) || /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText))) ||
+                (repairedDigits.length === 15 && (/^[2-6]|3[47]/.test(repairedDigits) || hasDocumentCardContext)) ||
+                (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
+                hasDocumentCardContext ||
+                /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord1) ||
+                /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord2)
+              )) ||
+              // OCR-degraded card line in confirmed Card context (2-5 blocks on card line with span >= 120px)
+              (hasDocumentCardContext && rawSlice.length >= 2 && rawSlice.length <= 5 && (
+                repairedDigits.length >= 8 ||
+                (rawSlice.some(w => /\d{3,4}|[SsOo]\d{3}|\d{3}[SsOo]/.test(w.text)) && (computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 120))
+              ) && !/^(company|name|mastercard|barclaycard|business|valid|thru)/i.test(cleanText))
             )
           ) {
             matchType = 'CARD';
             matchedText = joinedSpace;
           }
-          // 6b. CARD EXPIRY DATE (e.g. VALID THRU 01/18, 01/14, EXP 12/28, MM/YY, MM/YYYY)
+          // 6b. CARD EXPIRY DATE (e.g. VALID THRU 01/18, 01/14, EXP 12/28, MM/YY, MM/YYYY, 01738;)
           else if (
-            /^(0[1-9]|1[0-2])[\/\-](20\d{2}|\d{2})$/.test(cleanText) &&
             (
+              /^(0[1-9]|1[0-2])[\/\-](20\d{2}|\d{2})$/.test(cleanText) ||
+              (hasDocumentCardContext && /^(0[1-9]|1[0-2])[\/\-]?\d{2,4}[;\.,]?$/.test(cleanText)) ||
+              (hasDocumentCardContext && /^\d{2}[\/\-]\d{2}$/.test(cleanText))
+            ) &&
+            (
+              hasDocumentCardContext ||
               /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(prevWord1) ||
               /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(prevWord2) ||
               (line[i + winSize] && /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(unwrapUnicodeSmallText(line[i + winSize].text))) ||
@@ -432,6 +447,17 @@
               /^(cvv|cvc|cvv2|cvc2|cid|csc|security_code|security)[\s\:\-]*$/i.test(prevWord2) ||
               /^(cvv|cvc|cid|csc)[\s\:\-]+\d{3,4}$/i.test(cleanText)
             )
+          ) {
+            matchType = 'CARD';
+            matchedText = cleanText;
+          }
+          // 6e. CARDHOLDER NAME (e.g. "COMPANY NAME", "M STEPHENS", "JOHN DOE" in card context)
+          else if (
+            hasDocumentCardContext &&
+            (/^(company[\s]+name|cardholder|name[\s\:]+)/i.test(joinedSpace) ||
+             /^(company|name)/i.test(prevWord1) ||
+             /^(company|name)/i.test(prevWord2)) &&
+            /^[a-zA-Z\s\.\,\'\-]+$/.test(cleanText) && cleanText.length >= 3 && cleanText.length <= 40
           ) {
             matchType = 'CARD';
             matchedText = cleanText;
