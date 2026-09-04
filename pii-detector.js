@@ -379,23 +379,26 @@
       });
     }
 
-    matches.sort((a, b) => {
+    // Spatial Non-Maximum Suppression (NMS) & Bounding Box Deduplication
+    const dedupedMatches = deduplicateMatches(matches);
+
+    dedupedMatches.sort((a, b) => {
       const yDiff = a.bbox.y - b.bbox.y;
       if (Math.abs(yDiff) > 12) return yDiff;
       return a.bbox.x - b.bbox.x;
     });
 
     const summary = {
-      total: matches.length,
-      EMAIL: matches.filter(m => m.type === 'EMAIL').length,
-      PHONE: matches.filter(m => m.type === 'PHONE').length,
-      OTP: matches.filter(m => m.type === 'OTP').length,
-      CARD: matches.filter(m => m.type === 'CARD').length,
-      AVATAR: matches.filter(m => m.type === 'AVATAR').length,
-      PAN: matches.filter(m => m.type === 'PAN').length,
-      IFSC: matches.filter(m => m.type === 'IFSC').length,
-      ACCOUNT_NUM: matches.filter(m => m.type === 'ACCOUNT_NUM').length,
-      lowConfidenceCount: matches.filter(m => m.isLowConfidence).length
+      total: dedupedMatches.length,
+      EMAIL: dedupedMatches.filter(m => m.type === 'EMAIL').length,
+      PHONE: dedupedMatches.filter(m => m.type === 'PHONE').length,
+      OTP: dedupedMatches.filter(m => m.type === 'OTP').length,
+      CARD: dedupedMatches.filter(m => m.type === 'CARD').length,
+      AVATAR: dedupedMatches.filter(m => m.type === 'AVATAR').length,
+      PAN: dedupedMatches.filter(m => m.type === 'PAN').length,
+      IFSC: dedupedMatches.filter(m => m.type === 'IFSC').length,
+      ACCOUNT_NUM: dedupedMatches.filter(m => m.type === 'ACCOUNT_NUM').length,
+      lowConfidenceCount: dedupedMatches.filter(m => m.isLowConfidence).length
     };
 
     const hasLowConfidence = summary.lowConfidenceCount > 0;
@@ -404,7 +407,76 @@
       ? 'BLOCKED — Low Confidence detected'
       : 'READY — Safe to proceed';
 
-    return { matches, isBlocked, status, summary };
+    return { matches: dedupedMatches, isBlocked, status, summary };
+  }
+
+  /**
+   * Spatial Non-Maximum Suppression (NMS) to eliminate duplicate/overlapping PII bounding boxes
+   */
+  function deduplicateMatches(rawMatches) {
+    if (!Array.isArray(rawMatches) || rawMatches.length <= 1) return rawMatches;
+
+    const sorted = [...rawMatches].sort((a, b) => {
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+      const areaA = (a.bbox.width || 0) * (a.bbox.height || 0);
+      const areaB = (b.bbox.width || 0) * (b.bbox.height || 0);
+      return areaB - areaA;
+    });
+
+    const finalMatches = [];
+
+    for (const m of sorted) {
+      const boxA = m.bbox;
+      const areaA = Math.max(1, boxA.width * boxA.height);
+      let isDuplicate = false;
+
+      for (const kept of finalMatches) {
+        const boxB = kept.bbox;
+        const areaB = Math.max(1, boxB.width * boxB.height);
+
+        const xOverlap = Math.max(0, Math.min(boxA.x + boxA.width, boxB.x + boxB.width) - Math.max(boxA.x, boxB.x));
+        const yOverlap = Math.max(0, Math.min(boxA.y + boxA.height, boxB.y + boxB.height) - Math.max(boxA.y, boxB.y));
+        const overlapArea = xOverlap * yOverlap;
+
+        const minArea = Math.min(areaA, areaB);
+        const overlapRatio = overlapArea / minArea;
+
+        const centerDistX = Math.abs((boxA.x + boxA.width / 2) - (boxB.x + boxB.width / 2));
+        const centerDistY = Math.abs((boxA.y + boxA.height / 2) - (boxB.y + boxB.height / 2));
+
+        if (
+          overlapRatio > 0.20 ||
+          (centerDistX < Math.max(35, boxA.width * 0.45) && centerDistY < 20) ||
+          (m.matchedText && kept.matchedText && (m.matchedText.includes(kept.matchedText) || kept.matchedText.includes(m.matchedText)) && centerDistY < 26)
+        ) {
+          if (m.type === kept.type || kept.type === 'AVATAR' || m.type === 'AVATAR') {
+            const minX = Math.min(boxA.x, boxB.x);
+            const minY = Math.min(boxA.y, boxB.y);
+            const maxX = Math.max(boxA.x + boxA.width, boxB.x + boxB.width);
+            const maxY = Math.max(boxA.y + boxA.height, boxB.y + boxB.height);
+            kept.bbox = {
+              x: minX,
+              y: minY,
+              width: maxX - minX,
+              height: maxY - minY
+            };
+            if (m.wordIndices) {
+              for (const idx of m.wordIndices) {
+                if (!kept.wordIndices.includes(idx)) kept.wordIndices.push(idx);
+              }
+            }
+          }
+          isDuplicate = true;
+          break;
+        }
+      }
+
+      if (!isDuplicate) {
+        finalMatches.push(m);
+      }
+    }
+
+    return finalMatches;
   }
 
   /**

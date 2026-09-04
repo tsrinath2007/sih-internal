@@ -305,9 +305,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const mergedWords = [...scaledDomWords];
         for (const ow of extractedWords) {
           const isCovered = scaledDomWords.some(dw => {
-            const dx = Math.abs(dw.bbox.x - ow.bbox.x);
+            const xOverlap = Math.max(0, Math.min(dw.bbox.x + dw.bbox.width, ow.bbox.x + ow.bbox.width) - Math.max(dw.bbox.x, ow.bbox.x));
+            const yOverlap = Math.max(0, Math.min(dw.bbox.y + dw.bbox.height, ow.bbox.y + ow.bbox.height) - Math.max(dw.bbox.y, ow.bbox.y));
             const dy = Math.abs(dw.bbox.y - ow.bbox.y);
-            return dx < 35 && dy < 25;
+            const dx = Math.abs(dw.bbox.x - ow.bbox.x);
+            return (xOverlap > 4 && dy < 25) || (dx < 45 && dy < 25) || (dw.text && ow.text && dw.text.toLowerCase() === ow.text.toLowerCase() && dy < 30);
           });
           if (!isCovered) {
             mergedWords.push(ow);
