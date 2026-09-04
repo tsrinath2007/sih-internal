@@ -1,29 +1,30 @@
-// Parallax Top Bar Controller - High-Resolution Visual Perception Engine
+// Parallax Top Bar Controller - High-Resolution Visual Perception & Redaction Engine
 
 document.addEventListener('DOMContentLoaded', async () => {
   let isScanning = false;
   let currentScanData = null;
-  let currentProposedAction = null;
-  let currentLogEntryId = null;
   let isDrawerOpen = false;
-  let isLiveRadarActive = false;
-  let liveRadarTimer = null;
+  let isPageShieldActive = false;
 
   // Persistent WebAssembly Worker Pool (Pre-warmed in memory)
   let cachedWorker = null;
   let isWorkerInitializing = false;
 
   const scanBtn = document.getElementById('ptbScanBtn');
-  const liveRadarBtn = document.getElementById('ptbLiveRadarBtn');
-  const liveRadarText = document.getElementById('ptbLiveRadarText');
-  const sendBtn = document.getElementById('ptbSendBtn') || document.getElementById('sendBtn');
-  const taskSelect = document.getElementById('ptbTaskSelect');
   const statusText = document.getElementById('ptbStatusText');
   const drawerBtn = document.getElementById('ptbToggleDrawerBtn');
   const drawerBtnText = document.getElementById('ptbDrawerBtnText');
   const closeBtn = document.getElementById('ptbCloseBtn');
   const drawer = document.getElementById('ptbDrawer');
   const showcaseCount = document.getElementById('ptbShowcaseCount');
+  const toggleReceiptsBtn = document.getElementById('ptbToggleReceiptsBtn');
+
+  // Redaction Toolbar Export Tools
+  const downloadBtn = document.getElementById('ptbDownloadBtn');
+  const copyImgBtn = document.getElementById('ptbCopyImgBtn');
+  const copyTextBtn = document.getElementById('ptbCopyTextBtn');
+  const shieldPageBtn = document.getElementById('ptbShieldPageBtn');
+  const shieldPageText = document.getElementById('ptbShieldPageText');
 
   const origCanvas = document.getElementById('ptbOriginalCanvas');
   const sanCanvas = document.getElementById('ptbSanitizedCanvas');
@@ -33,13 +34,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const redactCount = document.getElementById('ptbRedactCount');
   const chipsList = document.getElementById('ptbChipsList');
 
-  const approvalCard = document.getElementById('ptbApprovalCard');
-  const actionTag = document.getElementById('ptbActionTag');
-  const proposedText = document.getElementById('ptbProposedText');
-  const approveBtn = document.getElementById('ptbApproveBtn');
-  const rejectBtn = document.getElementById('ptbRejectBtn');
-  const actionFeedback = document.getElementById('ptbActionFeedback');
-
   // Metrics & Log Elements
   const metricTotalScans = document.getElementById('metricTotalScans');
   const metricTotalPII = document.getElementById('metricTotalPII');
@@ -48,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const refreshLogBtn = document.getElementById('ptbRefreshLogBtn');
   const clearLogBtn = document.getElementById('ptbClearLogBtn');
   const logTableBody = document.getElementById('ptbLogTableBody');
+  const logBadgeCount = document.getElementById('ptbLogBadgeCount');
 
   // Fullscreen Elements
   const fsOrigBtn = document.getElementById('ptbFullscreenOrigBtn');
@@ -99,28 +94,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     isWorkerInitializing = true;
     try {
-      if (typeof Tesseract !== 'undefined') {
-        cachedWorker = await Tesseract.createWorker('eng', 1, {
-          workerPath: chrome.runtime.getURL('lib/worker.min.js'),
-          corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js'),
-          langPath: chrome.runtime.getURL('lib/lang-data'),
-          workerBlobURL: false,
-          gzip: true
-        });
-        console.log('⚡ [Parallax] WASM OCR Engine warmed in memory.');
+      if (typeof Tesseract === 'undefined') {
+        console.warn('[Parallax] Tesseract library not yet loaded in scope.');
+        return null;
       }
-    } catch (err) {
-      console.warn('[Parallax] Worker init warning (DOM fallback active):', err);
-      cachedWorker = null;
+      cachedWorker = await Tesseract.createWorker('eng', 1, {
+        workerPath: chrome.runtime.getURL('lib/worker.min.js'),
+        corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js'),
+        langPath: chrome.runtime.getURL('lib/lang-data'),
+        workerBlobURL: false,
+        gzip: true
+      });
+      return cachedWorker;
+    } catch (e) {
+      console.warn('[Parallax] Worker initialization fallback:', e);
+      return null;
     } finally {
       isWorkerInitializing = false;
     }
-    return cachedWorker;
   }
 
-  getPersistentWorker();
+  // Warm up worker on startup
+  setTimeout(() => { getPersistentWorker().catch(() => {}); }, 300);
 
-  // Load and Render Metrics and IndexedDB Logs
+  // Render Metrics & Audit Logs from IndexedDB
   async function renderMetricsAndLogs() {
     try {
       if (typeof ParallaxDB === 'undefined') return;
@@ -132,10 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (metricTotalApproved) metricTotalApproved.textContent = summary.totalApproved;
 
       const logs = await ParallaxDB.getAllLogs();
-      const logBadgeCount = document.getElementById('ptbLogBadgeCount');
-      if (logBadgeCount) {
-        logBadgeCount.textContent = `${logs ? logs.length : 0} records`;
-      }
+      if (logBadgeCount) logBadgeCount.textContent = `${logs.length} records`;
       if (!logTableBody) return;
 
       if (!logs || logs.length === 0) {
@@ -150,138 +144,93 @@ document.addEventListener('DOMContentLoaded', async () => {
         const uniqueTypes = [...new Set(typesList)];
         const typesStr = uniqueTypes.length > 0 ? uniqueTypes.join(', ') : 'None';
 
-        const statusClass = log.blocked ? 'log-status-blocked' : 'log-status-ready';
-        const statusLabel = log.blocked ? '⛔ BLOCKED' : '✅ READY';
+        const statusLabel = log.blocked 
+          ? '<span class="ptb-log-tag tag-blocked">⛔ SENSITIVE</span>' 
+          : '<span class="ptb-log-tag tag-approved">✅ PROTECTED</span>';
 
-        let actionLabel = '<span class="log-action-pending">—</span>';
-        if (log.actionApproved === true) {
-          actionLabel = `<span class="log-action-approved">✓ Approved (${log.actionType || 'action'})</span>`;
-        } else if (log.actionApproved === false) {
-          actionLabel = `<span class="log-action-declined">✕ Declined</span>`;
-        } else if (log.actionType) {
-          actionLabel = `<span class="log-action-pending">Pending (${log.actionType})</span>`;
-        }
-
+        const outcomeLabel = `<span style="color:#34d399; font-weight:700;">100% On-Device</span>`;
         const cleanUrl = (log.pageUrl || '').replace(/^https?:\/\//, '').split('?')[0];
 
         rowsHtml += `
           <tr>
-            <td>#${log.id}</td>
-            <td>${timeStr}</td>
-            <td title="${log.pageUrl}">${cleanUrl}</td>
-            <td><strong>${typesStr}</strong> (${log.redactedCount})</td>
-            <td class="${statusClass}">${statusLabel}</td>
-            <td>${actionLabel}</td>
+            <td class="cell-id">#${log.id}</td>
+            <td class="cell-time">${timeStr}</td>
+            <td class="cell-url" title="${log.pageUrl}">${cleanUrl}</td>
+            <td class="cell-types"><strong>${typesStr}</strong> (${log.redactedCount})</td>
+            <td class="cell-status">${statusLabel}</td>
+            <td class="cell-action">${outcomeLabel}</td>
           </tr>
         `;
       }
 
       logTableBody.innerHTML = rowsHtml;
-
     } catch (e) {
       console.warn('[Parallax] Failed to render metrics/logs:', e);
     }
   }
 
+  // Load metrics initially
   await renderMetricsAndLogs();
 
-  // Wire Refresh and Clear Log Buttons
+  // Wire log buttons
   if (refreshLogBtn) refreshLogBtn.addEventListener('click', renderMetricsAndLogs);
   if (clearLogBtn) {
     clearLogBtn.addEventListener('click', async () => {
-      if (confirm('This will delete all local detection history. Continue?')) {
+      if (confirm('Delete all local detection audit records? This cannot be undone.')) {
         await ParallaxDB.clearLogs();
         await renderMetricsAndLogs();
       }
     });
   }
 
-  // --------------------------------------------------------------------------
-  // Presenter Mode Engine (In-Memory Only, Default ON for Clean Demo)
-  // --------------------------------------------------------------------------
-  let isPresenterMode = true;
-
-  function updatePresenterModeUI() {
-    const metricsPanel = document.getElementById('ptbMetricsPanel');
-    const logSection = document.getElementById('ptbLogSection');
-    const presenterBtn = document.getElementById('ptbPresenterModeBtn');
-    const presenterText = document.getElementById('ptbPresenterText');
-    const receiptsBtn = document.getElementById('ptbToggleReceiptsBtn');
-
-    if (isPresenterMode) {
-      if (metricsPanel) metricsPanel.classList.add('presenter-hidden');
-      if (logSection) logSection.classList.add('presenter-hidden');
-      if (presenterBtn) presenterBtn.classList.add('active');
-      if (presenterText) presenterText.textContent = 'Presenter Mode: ON';
-      if (receiptsBtn) receiptsBtn.textContent = '📊 Reveal Metrics & Receipts ▼';
-    } else {
-      if (metricsPanel) metricsPanel.classList.remove('presenter-hidden');
-      if (logSection) logSection.classList.remove('presenter-hidden');
-      if (presenterBtn) presenterBtn.classList.remove('active');
-      if (presenterText) presenterText.textContent = 'Presenter Mode: OFF';
-      if (receiptsBtn) receiptsBtn.textContent = '▲ Hide Metrics & Receipts';
-    }
-  }
-
-  const presenterModeBtn = document.getElementById('ptbPresenterModeBtn');
-  if (presenterModeBtn) {
-    presenterModeBtn.addEventListener('click', () => {
-      isPresenterMode = !isPresenterMode;
-      updatePresenterModeUI();
-    });
-  }
-
-  const toggleReceiptsBtn = document.getElementById('ptbToggleReceiptsBtn');
-  if (toggleReceiptsBtn) {
-    toggleReceiptsBtn.addEventListener('click', () => {
-      isPresenterMode = !isPresenterMode;
-      updatePresenterModeUI();
-    });
-  }
-
-  updatePresenterModeUI();
-
-  // Toggle Showcase Drawer
-  if (drawerBtn) {
-    drawerBtn.addEventListener('click', () => {
-      isDrawerOpen = !isDrawerOpen;
+  // Showcase Drawer Toggle
+  function toggleDrawer() {
+    isDrawerOpen = !isDrawerOpen;
+    if (drawer) {
       drawer.classList.toggle('open', isDrawerOpen);
-      drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${currentScanData ? currentScanData.pii_matches.length : 0}) ▼`;
-      resizeHostIframe(isDrawerOpen);
-    });
+    }
+    if (drawerBtnText) {
+      const count = currentScanData ? currentScanData.pii_matches.length : 0;
+      drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${count}) ▼`;
+    }
+    resizeHostIframe(isDrawerOpen);
   }
 
-  // Hide Top Bar
+  if (drawerBtn) drawerBtn.addEventListener('click', toggleDrawer);
+
   if (closeBtn) {
     closeBtn.addEventListener('click', () => {
-      stopLiveRadar();
       window.parent.postMessage({ type: 'PARALLAX_HIDE_TOPBAR' }, '*');
     });
   }
 
   function maskPreview(text, type) {
     if (!text) return '';
-    if (type === 'CARD') {
+    if (type === 'AVATAR') return '🔒 Face Mask';
+    if (type === 'CARD' || type === 'ACCOUNT_NUM') {
       const digits = text.replace(/\D/g, '');
       return `•••• •••• •••• ${digits.slice(-4)}`;
     }
     if (type === 'EMAIL') {
       const parts = text.split('@');
       if (parts.length === 2) {
-        return `${parts[0].slice(0, 3)}•••@${parts[1]}`;
+        return `${parts[0].slice(0, 2)}•••@${parts[1]}`;
       }
     }
     if (type === 'PHONE') {
       const digits = text.replace(/\D/g, '');
-      return `+91 ••••• ${digits.slice(-4)}`;
+      return `+•• ••••• ${digits.slice(-4)}`;
     }
     if (type === 'OTP') {
       return `•••••• (${text.length} digits)`;
     }
+    if (type === 'IFSC') {
+      return `${text.slice(0, 4)}•••••••`;
+    }
     return text;
   }
 
-  function downscaleImageForOCR(dataUrl, maxDimension = 1280) {
+  function downscaleImageForOCR(dataUrl, maxDimension = 1600) {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -301,7 +250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ctx = offscreen.getContext('2d');
         ctx.drawImage(img, 0, 0, targetW, targetH);
         resolve({
-          dataUrl: offscreen.toDataURL('image/jpeg', 0.82),
+          dataUrl: offscreen.toDataURL('image/jpeg', 0.85),
           scale: 1 / scale,
           origW,
           origH
@@ -313,38 +262,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // --------------------------------------------------------------------------
-  // Core Perception Scan Pipeline (ALWAYS renders on the REAL page screenshot)
+  // Main On-Device Perception & Privacy Redaction Pipeline
   // --------------------------------------------------------------------------
-  async function executePerceptionScan(isAuto = false) {
+  async function executePerceptionScan() {
     if (isScanning) return;
     isScanning = true;
+    if (scanBtn) scanBtn.disabled = true;
 
-    if (!isAuto) {
-      if (scanBtn) scanBtn.disabled = true;
-      if (sendBtn) sendBtn.disabled = true;
-      if (approvalCard) approvalCard.classList.remove('open');
-      if (chipsList) chipsList.innerHTML = '';
-      setStatus('Capturing Viewport...', 'capturing');
-    }
+    setStatus('Capturing Viewport...', 'capturing');
 
     try {
-      // 1. Request instant DOM text extraction from host page
+      // 1. Request DOM words in parallel
       const domWordsPromise = new Promise((resolve) => {
-        const timer = setTimeout(() => resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 }), 180);
-        function onDomWords(e) {
-          if (e.data && e.data.type === 'PARALLAX_DOM_WORDS_RESPONSE') {
-            clearTimeout(timer);
-            window.removeEventListener('message', onDomWords);
-            resolve({
-              words: e.data.words || [],
-              viewportWidth: e.data.viewportWidth || window.innerWidth,
-              viewportHeight: e.data.viewportHeight || window.innerHeight,
-              devicePixelRatio: e.data.devicePixelRatio || 1
-            });
+        const handler = (event) => {
+          if (event.data && event.data.type === 'PARALLAX_DOM_WORDS_RESPONSE') {
+            window.removeEventListener('message', handler);
+            resolve(event.data);
           }
-        }
-        window.addEventListener('message', onDomWords);
+        };
+        window.addEventListener('message', handler);
         window.parent.postMessage({ type: 'PARALLAX_REQUEST_DOM_WORDS' }, '*');
+        setTimeout(() => resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 }), 250);
       });
 
       // Hide iframe cleanly so it is NEVER captured in the screenshot
@@ -369,11 +307,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       const screenshotDataUrl = captureResponse.dataUrl;
-      const targetPageUrl = captureResponse.pageUrl || 'http://localhost:3001/test-page-normal.html';
+      const targetPageUrl = captureResponse.pageUrl || 'webpage';
 
-      if (!isLiveRadarActive && !isAuto) {
-        setStatus('Processing OCR Locally...', 'processing');
-      }
+      setStatus('Processing On-Device OCR & PII Detection...', 'processing');
 
       // High-Speed Downscaled OCR Pre-processing
       const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
@@ -459,7 +395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             }
 
-            // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP, AVATAR)
+            // Run Strict Core 4 PII Detector (EMAIL, PHONE, CARD, OTP, AVATAR, Indian IDs)
             const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
 
             // Pinpoint exact face regions for any photographic avatar matches
@@ -474,9 +410,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               origWrapper.classList.add('has-img');
               const ctx = origCanvas.getContext('2d');
               ctx.clearRect(0, 0, width, height);
-              ctx.drawImage(img, 0, 0); // Draws the REAL screenshot!
+              ctx.drawImage(img, 0, 0);
 
-              // Map all words belonging to detected PII
               const piiWordIndexSet = new Set();
               for (const match of piiDetection.matches) {
                 for (const idx of (match.wordIndices || [])) {
@@ -484,7 +419,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
               }
 
-              // Step 1A: Draw subtle low-opacity gray outline for non-PII text (shows OCR coverage without clutter)
+              // Step 1A: Subtle low-opacity gray outline for non-PII text
               ctx.lineWidth = 1;
               ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
               ctx.fillStyle = 'rgba(148, 163, 184, 0.04)';
@@ -496,7 +431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
               }
 
-              // Step 1B: Draw bold high-contrast red/orange (#E8491A) boxes ONLY for PII regions
+              // Step 1B: Bold high-contrast red/orange (#E8491A) boxes ONLY for PII regions
               for (const match of piiDetection.matches) {
                 const { x, y, width: bw, height: bh } = match.bbox;
                 const pad = 4;
@@ -528,14 +463,14 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             }
 
-            // 2. Sanitized View: Dramatic Gaussian Frosted Blur + Dark Privacy Tint
+            // 2. Sanitized View: Dramatic Gaussian Frosted Blur + Dark Privacy Tint + Cyber Mosaic
             if (sanCanvas && sanWrapper) {
               sanCanvas.width = width;
               sanCanvas.height = height;
               sanWrapper.classList.add('has-img');
               const sCtx = sanCanvas.getContext('2d');
               sCtx.clearRect(0, 0, width, height);
-              sCtx.drawImage(img, 0, 0); // Draws the REAL screenshot!
+              sCtx.drawImage(img, 0, 0);
 
               for (const match of piiDetection.matches) {
                 const { x, y, width: bw, height: bh } = match.bbox;
@@ -562,7 +497,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                     sCtx.clip();
 
-                    // Step 1: Calculate Crisp Mosaic Pixel Block Grid (8-14 blocks across face)
+                    // Step 1: Calculate Crisp Mosaic Pixel Block Grid
                     const blockSize = Math.max(8, Math.min(20, Math.round(Math.min(rw, rh) / 9)));
                     const cols = Math.max(4, Math.round(rw / blockSize));
                     const rows = Math.max(4, Math.round(rh / blockSize));
@@ -581,7 +516,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if ('msImageSmoothingEnabled' in sCtx) sCtx.msImageSmoothingEnabled = false;
                     sCtx.drawImage(off, 0, 0, cols, rows, rx, ry, rw, rh);
 
-                    // Step 4: Draw Cyber Mosaic Grid Lines (TV & Security Censorship Style)
+                    // Step 4: Draw Cyber Mosaic Grid Lines
                     sCtx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
                     sCtx.lineWidth = 1;
                     for (let c = 1; c < cols; c++) {
@@ -639,7 +574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (wordCount) wordCount.textContent = `${mergedWords.length} words`;
             if (redactCount) redactCount.textContent = `${piiDetection.matches.length} Redacted`;
             if (showcaseCount) showcaseCount.textContent = `${piiDetection.matches.length} SENSITIVE REGION${piiDetection.matches.length === 1 ? '' : 'S'} PROTECTED`;
-            if (drawerBtnText) drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${piiDetection.matches.length} PII) ▼`;
+            if (drawerBtnText) drawerBtnText.textContent = isDrawerOpen ? 'Collapse Showcase ▲' : `Showcase (${piiDetection.matches.length}) ▼`;
 
             // Render Glass Chips
             let chipsHtml = '';
@@ -658,17 +593,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (chipsList) chipsList.innerHTML = chipsHtml;
 
-            if (isLiveRadarActive) {
-              setStatus(`Live Radar (Active • ${piiDetection.matches.length} PII Protected)`, 'ready');
-            } else if (piiDetection.isBlocked) {
-              setStatus('Review & Send Ready', 'ready');
-            } else {
-              setStatus('READY — Safe to proceed', 'ready');
-            }
+            const matchCount = piiDetection.matches.length;
+            setStatus(`Redaction Complete • ${matchCount} Protected`, 'ready');
 
             // Log to IndexedDB (STRICT METADATA ONLY)
             try {
-              const logId = await ParallaxDB.addLog({
+              await ParallaxDB.addLog({
                 pageUrl: targetPageUrl,
                 timestamp: new Date().toISOString(),
                 detections: piiDetection.matches.map(m => ({
@@ -678,20 +608,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 })),
                 redactedCount: piiDetection.matches.length,
                 blocked: piiDetection.isBlocked,
-                actionType: null,
-                actionApproved: null
+                actionType: 'ON_DEVICE_REDACT',
+                actionApproved: true
               });
-              currentLogEntryId = logId;
               await renderMetricsAndLogs();
             } catch (logErr) {
               console.warn('[ParallaxDB] Logging failed:', logErr);
             }
 
-            if (!isAuto) {
-              isDrawerOpen = true;
-              if (drawer) drawer.classList.add('open');
-              resizeHostIframe(true);
-            }
+            // Open Showcase Drawer on Scan
+            isDrawerOpen = true;
+            if (drawer) drawer.classList.add('open');
+            resizeHostIframe(true);
 
             const sanitizedText = PIIDetector.generateSanitizedText(mergedWords, piiDetection.matches);
             currentScanData = {
@@ -702,7 +630,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               is_blocked: piiDetection.isBlocked
             };
 
-            if (sendBtn) sendBtn.disabled = false;
             resolve();
           } catch (loadErr) {
             console.error('[Parallax] Canvas draw error:', loadErr);
@@ -716,492 +643,103 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     } catch (err) {
       console.error('[Parallax] Scan Error:', err);
-      if (!isLiveRadarActive) setStatus(`Error: ${err.message}`, 'error');
+      setStatus(`Error: ${err.message}`, 'error');
     } finally {
       isScanning = false;
       if (scanBtn) scanBtn.disabled = false;
-      if (sendBtn) sendBtn.disabled = false;
     }
   }
 
-  // Live Radar Loop (Fast Real-Image Perception Loop)
-  function startLiveRadar() {
-    isLiveRadarActive = true;
-    if (liveRadarBtn) liveRadarBtn.classList.add('active');
-    if (liveRadarText) liveRadarText.textContent = 'Live Radar: ON';
-    setStatus('Live Radar: Active', 'ready');
+  if (scanBtn) scanBtn.addEventListener('click', () => executePerceptionScan());
 
-    executePerceptionScan(true);
-
-    liveRadarTimer = setInterval(() => {
-      if (isLiveRadarActive && !isScanning) {
-        executePerceptionScan(true);
-      }
-    }, 2000);
-  }
-
-  function stopLiveRadar() {
-    isLiveRadarActive = false;
-    if (liveRadarTimer) {
-      clearInterval(liveRadarTimer);
-      liveRadarTimer = null;
-    }
-    if (liveRadarBtn) liveRadarBtn.classList.remove('active');
-    if (liveRadarText) liveRadarText.textContent = 'Live Radar: OFF';
-    setStatus('Idle', 'idle');
-  }
-
-  function toggleLiveRadar() {
-    if (isLiveRadarActive) {
-      stopLiveRadar();
-    } else {
-      startLiveRadar();
-    }
-  }
-
-  if (liveRadarBtn) liveRadarBtn.addEventListener('click', toggleLiveRadar);
-  if (scanBtn) scanBtn.addEventListener('click', () => executePerceptionScan(false));
-
-  // Custom user prompt input & Enter key trigger
-  const ptbUserPrompt = document.getElementById('ptbUserPrompt');
-  if (ptbUserPrompt && sendBtn) {
-    ptbUserPrompt.addEventListener('input', () => {
-      sendBtn.disabled = false;
-    });
-
-    ptbUserPrompt.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (!currentScanData) {
-          await executePerceptionScan(false);
-        }
-        sendBtn.disabled = false;
-        sendBtn.click();
-      }
-    });
-  }
-
-  const chatHistory = [];
-  const ptbChatHistory = document.getElementById('ptbChatHistory');
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  function renderPtbChatHistory() {
-    if (!ptbChatHistory) return;
-    if (chatHistory.length === 0) {
-      ptbChatHistory.innerHTML = `<div class="ptb-approval-content" id="ptbProposedText" style="color: #64748b;">No conversation history yet. Send sanitized context to start.</div>`;
-      return;
-    }
-
-    let html = '';
-    for (const item of chatHistory) {
-      if (item.type === 'user') {
-        html += `
-          <div class="chat-msg-user">
-            <div class="chat-msg-user-hdr">
-              <span>👤 OPERATOR QUERY</span>
-              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #64748b;">${item.timestamp}</span>
-            </div>
-            <div class="chat-msg-user-text">${escapeHtml(item.text)}</div>
-          </div>
-        `;
-      } else if (item.type === 'thinking') {
-        html += `
-          <div class="chat-msg-thinking">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="ptb-spin" style="animation: ptbPulse 1s infinite;">
-              <circle cx="12" cy="12" r="10" stroke-opacity="0.3"></circle>
-              <path d="M12 2a10 10 0 0 1 10 10"></path>
-            </svg>
-            <span>${escapeHtml(item.text)}</span>
-          </div>
-        `;
-      } else if (item.type === 'ai') {
-        const d = item.data;
-        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 700; border: 1px solid rgba(0, 242, 254, 0.3);">🤖 ${escapeHtml(d.model || 'openai/gpt-oss-120b (Groq Live)')}</span>`;
-        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3);">${Math.round((d.confidence || 0.98) * 100)}% Conf</span>`;
-        const actionTypeStr = (d.action_type || 'GUIDANCE').toUpperCase();
-
-        html += `
-          <div class="chat-msg-ai">
-            <div class="chat-msg-ai-hdr">
-              <div class="chat-msg-ai-title">
-                <span>🤖 LIVE AI AGENT</span>
-                <span class="ptb-action-tag" style="font-size: 10px; padding: 2px 7px;">${actionTypeStr}</span>
-              </div>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                ${modelBadge}
-                ${confidenceBadge}
-              </div>
-            </div>
-            <div class="ptb-approval-content">
-              <div style="font-size: 11px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">💡 Cloud LLM Rationale &amp; Perception:</div>
-              <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(d.rationale || d.content || '')}</div>
-              ${d.selector ? `
-                <div style="margin-top: 10px; font-size: 12px; color: #cbd5e1; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
-                  <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">${escapeHtml(d.action_type || 'fill_field')} -&gt; ${escapeHtml(d.selector)}</code>
-                  ${d.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${escapeHtml(d.value)}"</span>` : ''}
-                </div>
-              ` : ''}
-              <div style="font-size: 10.5px; color: #38bdf8; margin-top: 8px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; padding: 5px 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
-                <span>🖼️ Redacted Image Sent: <strong>${d.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
-                <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-    }
-
-    ptbChatHistory.innerHTML = html;
-    setTimeout(() => {
-      ptbChatHistory.scrollTop = ptbChatHistory.scrollHeight;
-    }, 20);
-  }
-
-  // Handle Send to Backend
-  if (sendBtn) {
-    sendBtn.addEventListener('click', async () => {
-      if (!currentScanData) {
-        setStatus('Scanning page before sending...', 'processing');
-        await executePerceptionScan(false);
-      }
-
-      if (!currentScanData) {
-        setStatus('Please scan the page first', 'warning');
+  // Handle Download Sanitized Image
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+      if (!sanCanvas || sanCanvas.width === 0) {
+        setStatus('Scan the page first before downloading', 'warning');
         return;
       }
+      const link = document.createElement('a');
+      link.download = `parallax-redacted-${Date.now()}.png`;
+      link.href = sanCanvas.toDataURL('image/png');
+      link.click();
+      setStatus('✓ Redacted image downloaded!', 'ready');
+    });
+  }
 
-      const selectedTask = taskSelect ? taskSelect.value : 'auto_guide';
-      const sanitizedImageDataUrl = sanCanvas ? sanCanvas.toDataURL('image/jpeg', 0.8) : '';
-      const promptInput = document.getElementById('ptbUserPrompt');
-      const customPrompt = promptInput ? promptInput.value.trim() : '';
-      const promptError = document.getElementById('ptbPromptError');
-
-      // Client-Side Action Constraint Validation (Only allows Summarize Page & Fill Form Field)
-      if (customPrompt) {
-        const lower = customPrompt.toLowerCase();
-        const isSummarize = lower.includes('summar') || lower.includes('overview') || lower.includes('brief') || lower.includes('tl;dr') || lower.includes('what is');
-        const isFill = lower.includes('fill') || lower.includes('input') || lower.includes('type') || lower.includes('form') || lower.includes('roll') || lower.includes('city') || lower.includes('name') || lower.includes('enter') || lower.includes('guide') || lower.includes('auto') || lower.includes('click') || lower.includes('next') || lower.includes('meeting') || lower.includes('login') || lower.includes('submit');
-
-        if (!isSummarize && !isFill) {
-          if (promptError) {
-            promptError.style.display = 'block';
-            setTimeout(() => { if (promptError) promptError.style.display = 'none'; }, 4500);
+  // Handle Copy Sanitized Image to Clipboard
+  if (copyImgBtn) {
+    copyImgBtn.addEventListener('click', () => {
+      if (!sanCanvas || sanCanvas.width === 0) {
+        setStatus('Scan the page first before copying', 'warning');
+        return;
+      }
+      sanCanvas.toBlob(async (blob) => {
+        if (blob && navigator.clipboard && navigator.clipboard.write) {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            setStatus('✓ Redacted image copied to clipboard!', 'ready');
+          } catch (e) {
+            console.warn('[Parallax] Clipboard copy error:', e);
+            setStatus('Clipboard copy failed. Try downloading image.', 'warning');
           }
-          setStatus('Action not supported in current build', 'warning');
-          sendBtn.disabled = false;
-          return;
         }
-      }
-      if (promptError) promptError.style.display = 'none';
-
-      setStatus('Consulting AI Agent...', 'processing');
-      sendBtn.disabled = true;
-
-      // Add user message & thinking indicator to chat history
-      const queryText = customPrompt || (selectedTask === 'auto_guide' ? 'Guide: Analyze page and determine next optimal action' : `Task: ${selectedTask}`);
-      chatHistory.push({
-        type: 'user',
-        text: queryText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       });
-      chatHistory.push({
-        type: 'thinking',
-        text: 'Consulting Live Cloud LLM with sanitized on-device context...'
-      });
-
-      if (approvalCard) {
-        approvalCard.classList.add('open');
-      }
-      renderPtbChatHistory();
-
-      try {
-        const payload = {
-          sanitized_ocr_text: currentScanData.sanitized_ocr_text,
-          sanitized_image: sanitizedImageDataUrl,
-          task: selectedTask,
-          user_prompt: customPrompt
-        };
-
-        let response = null;
-        try {
-          response = await fetch('http://localhost:3001/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        } catch (e1) {
-          response = await fetch('http://127.0.0.1:3001/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        }
-
-        if (!response || !response.ok) {
-          throw new Error(`Backend Offline: Start backend with "npm start" (HTTP ${response ? response.status : 'offline'})`);
-        }
-
-        const data = await response.json();
-        currentProposedAction = data;
-
-        if (currentLogEntryId != null) {
-          await ParallaxDB.updateLog(currentLogEntryId, {
-            actionType: data.action_type || selectedTask,
-            actionApproved: null
-          });
-          await renderMetricsAndLogs();
-        }
-
-        if (actionTag) actionTag.textContent = (data.action_type || selectedTask).toUpperCase();
-        if (actionFeedback) actionFeedback.style.display = 'none';
-        if (approveBtn) approveBtn.disabled = false;
-        if (rejectBtn) rejectBtn.disabled = false;
-
-        // Replace thinking indicator with AI response
-        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-        if (thinkingIdx !== -1) {
-          chatHistory.splice(thinkingIdx, 1);
-        }
-        chatHistory.push({
-          type: 'ai',
-          data: data,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        });
-        renderPtbChatHistory();
-
-        if (approvalCard) {
-          approvalCard.classList.add('open');
-          setTimeout(() => {
-            approvalCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 50);
-        }
-        setStatus('Awaiting Approval', 'processing');
-
-        isDrawerOpen = true;
-        if (drawer) drawer.classList.add('open');
-        resizeHostIframe(true);
-
-      } catch (err) {
-        console.error('[Parallax] Backend Error:', err);
-        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-        if (thinkingIdx !== -1) {
-          chatHistory.splice(thinkingIdx, 1);
-        }
-        chatHistory.push({
-          type: 'ai',
-          data: {
-            action_type: 'ERROR',
-            model: 'Parallax Error',
-            confidence: 0,
-            rationale: `Failed to consult AI agent: ${err.message}. Ensure backend is running with "node server.js".`
-          },
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        });
-        renderPtbChatHistory();
-        setStatus(`Backend Error: ${err.message}`, 'error');
-      } finally {
-        if (sendBtn) sendBtn.disabled = false;
-      }
     });
   }
 
-  // Handle Approve Action
-  if (approveBtn) {
-    approveBtn.addEventListener('click', async () => {
-      if (!currentProposedAction) return;
-
-      approveBtn.disabled = true;
-      if (rejectBtn) rejectBtn.disabled = true;
-
-      if (currentLogEntryId != null) {
-        await ParallaxDB.updateLog(currentLogEntryId, {
-          actionType: currentProposedAction.action_type || 'fill_field',
-          actionApproved: true
-        });
-        await renderMetricsAndLogs();
+  // Handle Copy Sanitized Text
+  if (copyTextBtn) {
+    copyTextBtn.addEventListener('click', () => {
+      if (!currentScanData || !currentScanData.sanitized_ocr_text) {
+        setStatus('Scan the page first before copying text', 'warning');
+        return;
       }
+      navigator.clipboard.writeText(currentScanData.sanitized_ocr_text).then(() => {
+        setStatus('✓ Sanitized OCR text copied to clipboard!', 'ready');
+      }).catch(err => {
+        console.warn('Clipboard write text error:', err);
+      });
+    });
+  }
 
-      const isClick = currentProposedAction.action_type === 'click';
-      const isFill = currentProposedAction.action_type === 'fill_field';
+  // Handle In-Page Shield Overlay Toggle
+  if (shieldPageBtn) {
+    shieldPageBtn.addEventListener('click', () => {
+      if (!currentScanData || !currentScanData.pii_matches) {
+        setStatus('Scan the page first to detect sensitive regions', 'warning');
+        return;
+      }
+      isPageShieldActive = !isPageShieldActive;
+      window.parent.postMessage({
+        type: isPageShieldActive ? 'PARALLAX_APPLY_PAGE_SHIELD' : 'PARALLAX_CLEAR_PAGE_SHIELD',
+        piiMatches: currentScanData.pii_matches
+      }, '*');
 
-      if (isClick || isFill) {
-        window.parent.postMessage({
-          type: 'PARALLAX_EXECUTE_ACTION',
-          action: currentProposedAction.action_type,
-          selector: currentProposedAction.selector || '#city',
-          value: currentProposedAction.value
-        }, '*');
-
-        if (actionFeedback) {
-          actionFeedback.textContent = isClick
-            ? `✓ Approved! Clicked "${currentProposedAction.selector}" on webpage.`
-            : `✓ Approved! Filled "${currentProposedAction.selector}" on webpage.`;
-          actionFeedback.style.color = '#34d399';
-          actionFeedback.style.display = 'inline';
-        }
-        setStatus('Action Executed', 'ready');
+      if (shieldPageText) {
+        shieldPageText.textContent = isPageShieldActive ? 'Shield Active (Clear)' : 'Shield Webpage';
+      }
+      if (isPageShieldActive) {
+        shieldPageBtn.classList.add('active');
+        setStatus('✓ Live in-page privacy masks applied to webpage!', 'ready');
       } else {
-        if (actionFeedback) {
-          actionFeedback.textContent = '✓ Summary approved by operator.';
-          actionFeedback.style.color = '#34d399';
-          actionFeedback.style.display = 'inline';
-        }
-        setStatus('Summary Approved', 'ready');
+        shieldPageBtn.classList.remove('active');
+        setStatus('In-page privacy masks cleared', 'idle');
       }
     });
   }
 
-  // Handle Reject Action
-  if (rejectBtn) {
-    rejectBtn.addEventListener('click', async () => {
-      if (approveBtn) approveBtn.disabled = true;
-      rejectBtn.disabled = true;
+  // Handle Toggle Receipts Button
+  const logSection = document.getElementById('ptbLogSection');
+  const metricsPanel = document.getElementById('ptbMetricsPanel');
+  let areReceiptsVisible = true;
 
-      if (currentLogEntryId != null) {
-        await ParallaxDB.updateLog(currentLogEntryId, {
-          actionType: currentProposedAction ? currentProposedAction.action_type : 'action',
-          actionApproved: false
-        });
-        await renderMetricsAndLogs();
-      }
-
-      if (actionFeedback) {
-        actionFeedback.textContent = '✕ Action declined by user.';
-        actionFeedback.style.color = '#fb7185';
-        actionFeedback.style.display = 'inline';
-      }
-      setStatus('Action Declined', 'idle');
-
-      setTimeout(() => {
-        if (approvalCard) approvalCard.classList.remove('open');
-        if (sendBtn) sendBtn.disabled = false;
-      }, 2000);
-    });
-  }
-
-  // Handle Follow-up Question Submission to AI Agent
-  const followupInput = document.getElementById('ptbFollowupInput');
-  const followupBtn = document.getElementById('ptbFollowupBtn');
-
-  async function handleFollowupSubmit() {
-    if (!followupInput) return;
-    const query = followupInput.value.trim();
-    if (!query) return;
-
-    if (!currentScanData) {
-      await executePerceptionScan(false);
-    }
-
-    if (!currentScanData) return;
-
-    // Append user question and thinking indicator to chatHistory
-    chatHistory.push({
-      type: 'user',
-      text: query,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    });
-    chatHistory.push({
-      type: 'thinking',
-      text: `Consulting Live Cloud LLM on: "${query}"...`
-    });
-    renderPtbChatHistory();
-    followupInput.value = '';
-
-    if (followupBtn) followupBtn.disabled = true;
-    if (approveBtn) approveBtn.disabled = true;
-    if (rejectBtn) rejectBtn.disabled = true;
-    setStatus('Processing Follow-Up...', 'processing');
-
-    try {
-      const sanitizedImageDataUrl = sanCanvas ? sanCanvas.toDataURL('image/jpeg', 0.8) : '';
-      const payload = {
-        sanitized_ocr_text: currentScanData.sanitized_ocr_text,
-        sanitized_image: sanitizedImageDataUrl,
-        task: 'auto_guide',
-        user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`
-      };
-
-      let response = null;
-      try {
-        response = await fetch('http://localhost:3001/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch (e1) {
-        response = await fetch('http://127.0.0.1:3001/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
-
-      if (!response || !response.ok) {
-        throw new Error(`Backend Offline: Start backend with "npm start" (HTTP ${response ? response.status : 'offline'})`);
-      }
-
-      const data = await response.json();
-      currentProposedAction = data;
-
-      if (actionTag) actionTag.textContent = (data.action_type || 'GUIDANCE').toUpperCase();
-      if (actionFeedback) actionFeedback.style.display = 'none';
-      if (approveBtn) approveBtn.disabled = false;
-      if (rejectBtn) rejectBtn.disabled = false;
-
-      // Replace thinking indicator with AI response
-      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-      if (thinkingIdx !== -1) {
-        chatHistory.splice(thinkingIdx, 1);
-      }
-      chatHistory.push({
-        type: 'ai',
-        data: data,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-      renderPtbChatHistory();
-      setStatus('Follow-up Answered', 'ready');
-
-    } catch (err) {
-      console.error('[Parallax] Follow-up Error:', err);
-      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-      if (thinkingIdx !== -1) {
-        chatHistory.splice(thinkingIdx, 1);
-      }
-      chatHistory.push({
-        type: 'ai',
-        data: {
-          action_type: 'ERROR',
-          model: 'Parallax Error',
-          confidence: 0,
-          rationale: `Follow-up error: ${err.message}`
-        },
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-      renderPtbChatHistory();
-      setStatus(`Follow-up Error: ${err.message}`, 'error');
-    } finally {
-      if (followupBtn) followupBtn.disabled = false;
-      if (approveBtn) approveBtn.disabled = false;
-      if (rejectBtn) rejectBtn.disabled = false;
-    }
-  }
-
-  if (followupBtn) followupBtn.addEventListener('click', handleFollowupSubmit);
-  if (followupInput) {
-    followupInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleFollowupSubmit();
-      }
+  if (toggleReceiptsBtn) {
+    toggleReceiptsBtn.addEventListener('click', () => {
+      areReceiptsVisible = !areReceiptsVisible;
+      if (logSection) logSection.style.display = areReceiptsVisible ? 'block' : 'none';
+      if (metricsPanel) metricsPanel.style.display = areReceiptsVisible ? 'grid' : 'none';
+      toggleReceiptsBtn.textContent = areReceiptsVisible ? '📊 Hide Metrics & Receipts ▲' : '📊 Reveal Metrics & Receipts ▼';
     });
   }
 
@@ -1228,7 +766,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (logToggleBtn) logToggleBtn.addEventListener('click', toggleLogCollapse);
   if (logHeaderToggle) logHeaderToggle.addEventListener('click', toggleLogCollapse);
 
+  // --------------------------------------------------------------------------
   // Fullscreen Modal Viewer
+  // --------------------------------------------------------------------------
   function renderFsCanvas() {
     const sourceCanvas = currentFsMode === 'original' ? origCanvas : sanCanvas;
     if (!sourceCanvas || sourceCanvas.width === 0) {
@@ -1244,7 +784,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ctx.fillText('Scan a page first to view in Full Screen', 400, 240);
         ctx.fillStyle = '#94a3b8';
         ctx.font = '13px sans-serif';
-        ctx.fillText('Click "Scan Page" to run visual perception scan', 400, 270);
+        ctx.fillText('Click "Scan & Redact Page" to run visual perception scan', 400, 270);
       }
       return;
     }
@@ -1257,16 +797,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (currentFsMode === 'original') {
       fsModeBadge.textContent = 'ORIGINAL VIEW';
-      fsModeBadge.style.background = 'rgba(0, 242, 254, 0.2)';
       fsModeBadge.style.color = '#00f2fe';
-      fsMetaText.textContent = `${wordCount ? wordCount.textContent : '0 words'} detected • Cyan Bounding Boxes`;
+      fsMetaText.textContent = `${wordCount ? wordCount.textContent : '0 words'} detected`;
       fsTabOrig.classList.add('active');
       fsTabSan.classList.remove('active');
     } else {
       fsModeBadge.textContent = 'SANITIZED VIEW';
-      fsModeBadge.style.background = 'rgba(16, 185, 129, 0.2)';
       fsModeBadge.style.color = '#34d399';
-      fsMetaText.textContent = `${redactCount ? redactCount.textContent : '0 Redacted'} • Solid Blackout Privacy Protection`;
+      fsMetaText.textContent = `${redactCount ? redactCount.textContent : '0 Redacted'} protected`;
       fsTabSan.classList.add('active');
       fsTabOrig.classList.remove('active');
     }
@@ -1283,74 +821,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  function openFsModal(mode = 'original') {
+  function openFullscreen(mode = 'original') {
     currentFsMode = mode;
     currentZoom = 1.0;
     if (fsModal) {
-      fsModal.style.display = 'flex';
       fsModal.classList.add('open');
+      document.body.style.overflow = 'hidden';
     }
-    window.parent.postMessage({ type: 'PARALLAX_RESIZE_IFRAME', height: '100vh' }, '*');
     renderFsCanvas();
   }
 
-  function closeFsModal() {
+  function closeFullscreen() {
     if (fsModal) {
-      fsModal.style.display = 'none';
       fsModal.classList.remove('open');
+      document.body.style.overflow = '';
     }
-    window.parent.postMessage({
-      type: 'PARALLAX_RESIZE_IFRAME',
-      height: isDrawerOpen ? '85vh' : '58px'
-    }, '*');
   }
 
-  if (fsOrigBtn) fsOrigBtn.addEventListener('click', (e) => { e.stopPropagation(); openFsModal('original'); });
-  if (fsSanBtn) fsSanBtn.addEventListener('click', (e) => { e.stopPropagation(); openFsModal('sanitized'); });
-  if (origCanvas) origCanvas.addEventListener('click', () => openFsModal('original'));
-  if (sanCanvas) sanCanvas.addEventListener('click', () => openFsModal('sanitized'));
+  if (fsOrigBtn) fsOrigBtn.addEventListener('click', () => openFullscreen('original'));
+  if (fsSanBtn) fsSanBtn.addEventListener('click', () => openFullscreen('sanitized'));
+  if (fsCloseBtn) fsCloseBtn.addEventListener('click', closeFullscreen);
+  if (fsBackdrop) fsBackdrop.addEventListener('click', closeFullscreen);
 
-  if (fsCloseBtn) fsCloseBtn.addEventListener('click', closeFsModal);
-  if (fsBackdrop) fsBackdrop.addEventListener('click', closeFsModal);
+  if (fsTabOrig) fsTabOrig.addEventListener('click', () => { currentFsMode = 'original'; renderFsCanvas(); });
+  if (fsTabSan) fsTabSan.addEventListener('click', () => { currentFsMode = 'sanitized'; renderFsCanvas(); });
 
-  if (fsTabOrig) {
-    fsTabOrig.addEventListener('click', () => {
-      currentFsMode = 'original';
-      renderFsCanvas();
-    });
-  }
-
-  if (fsTabSan) {
-    fsTabSan.addEventListener('click', () => {
-      currentFsMode = 'sanitized';
-      renderFsCanvas();
-    });
-  }
-
-  if (fsZoomInBtn) {
-    fsZoomInBtn.addEventListener('click', () => {
-      currentZoom = Math.min(3.0, currentZoom + 0.25);
-      applyZoom();
-    });
-  }
-
-  if (fsZoomOutBtn) {
-    fsZoomOutBtn.addEventListener('click', () => {
-      currentZoom = Math.max(0.5, currentZoom - 0.25);
-      applyZoom();
-    });
-  }
-
-  if (fsZoomResetBtn) {
-    fsZoomResetBtn.addEventListener('click', () => {
-      currentZoom = 1.0;
-      applyZoom();
-    });
-  }
+  if (fsZoomInBtn) fsZoomInBtn.addEventListener('click', () => { currentZoom = Math.min(3.0, currentZoom + 0.25); applyZoom(); });
+  if (fsZoomOutBtn) fsZoomOutBtn.addEventListener('click', () => { currentZoom = Math.max(0.4, currentZoom - 0.25); applyZoom(); });
+  if (fsZoomResetBtn) fsZoomResetBtn.addEventListener('click', () => { currentZoom = 1.0; applyZoom(); });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && fsModal && fsModal.classList.contains('open')) {
-      closeFsModal();
+      closeFullscreen();
     }
   });
 });

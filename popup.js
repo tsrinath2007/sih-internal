@@ -1,9 +1,7 @@
-// Parallax - On-Device Perception, Privacy Redaction, & Safe Human Action Approval (Side Panel / Popup)
+// Parallax - On-Device Privacy & Redaction Shield (Popup & Sidebar)
 
 document.addEventListener('DOMContentLoaded', async () => {
   const scanBtn = document.getElementById('scanBtn');
-  const sendBtn = document.getElementById('sendBtn');
-  const taskSelect = document.getElementById('taskSelect');
   const statusText = document.getElementById('statusText');
 
   const originalCanvas = document.getElementById('originalCanvas');
@@ -14,16 +12,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const wordCountBadge = document.getElementById('wordCountBadge');
   const redactedCountBadge = document.getElementById('redactedCountBadge');
   const resultsDiv = document.getElementById('results');
+  const redactionToolbar = document.getElementById('redactionToolbar');
 
-  // Approval UI Elements
-  const approvalCard = document.getElementById('approvalCard');
-  const actionTypeTag = document.getElementById('actionTypeTag');
-  const proposedActionText = document.getElementById('proposedActionText');
-  const approveBtn = document.getElementById('approveBtn');
-  const rejectBtn = document.getElementById('rejectBtn');
-  const actionFeedback = document.getElementById('actionFeedback');
+  // Redaction Export & Action Buttons
+  const downloadSanBtn = document.getElementById('downloadSanBtn');
+  const copySanImgBtn = document.getElementById('copySanImgBtn');
+  const copySanTextBtn = document.getElementById('copySanTextBtn');
+  const toggleInPageShieldBtn = document.getElementById('toggleInPageShieldBtn');
+  const inPageShieldText = document.getElementById('inPageShieldText');
 
-  // Privacy Audit Elements
+  // Privacy Audit & Header Elements
   const auditDetectedCount = document.getElementById('auditDetectedCount');
   const auditRedactedCount = document.getElementById('auditRedactedCount');
   const auditActionStatus = document.getElementById('auditActionStatus');
@@ -40,8 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let isScanning = false;
   let currentScanData = null;
-  let currentProposedAction = null;
-  let currentLogEntryId = null;
+  let isInPageShieldActive = false;
 
   // Toggle In-Page Top Bar HUD
   if (toggleTopBarBtn) {
@@ -100,17 +97,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const uniqueTypes = [...new Set(typesList)];
         const typesStr = uniqueTypes.length > 0 ? uniqueTypes.join(', ') : 'None';
 
-        const statusLabel = log.blocked ? '<span style="color:#fb7185; font-weight:700;">⛔ BLOCKED</span>' : '<span style="color:#34d399; font-weight:700;">✅ READY</span>';
+        const statusLabel = log.blocked 
+          ? '<span style="color:#fb7185; font-weight:700;">⛔ SENSITIVE</span>' 
+          : '<span style="color:#34d399; font-weight:700;">✅ PROTECTED</span>';
 
-        let actionLabel = '<span style="color:#64748b;">—</span>';
-        if (log.actionApproved === true) {
-          actionLabel = `<span style="color:#34d399; font-weight:700;">✓ Approved</span>`;
-        } else if (log.actionApproved === false) {
-          actionLabel = `<span style="color:#fb7185; font-weight:700;">✕ Declined</span>`;
-        } else if (log.actionType) {
-          actionLabel = `<span style="color:#94a3b8;">Pending (${log.actionType})</span>`;
-        }
-
+        const actionLabel = `<span style="color:#34d399; font-weight:700;">100% On-Device</span>`;
         const cleanUrl = (log.pageUrl || '').replace(/^https?:\/\//, '').split('?')[0];
 
         rowsHtml += `
@@ -132,7 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Initial load
+  // Initial load of metrics & logs
   await renderPopupMetricsAndLogs();
 
   // Wire log buttons
@@ -146,21 +137,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Define performScan function (usable by Scan button, Send button, or prompt Enter)
+  // Redaction Execution Pipeline
   async function performScan() {
     if (isScanning) return;
     isScanning = true;
     if (scanBtn) scanBtn.disabled = true;
-    if (sendBtn) sendBtn.disabled = true;
     if (resultsDiv) resultsDiv.innerHTML = '';
-    if (approvalCard) approvalCard.style.display = 'none';
     if (wordCountBadge) wordCountBadge.style.display = 'none';
     if (redactedCountBadge) redactedCountBadge.style.display = 'none';
     if (auditActionStatus) auditActionStatus.textContent = 'Scanning...';
 
     try {
       // Step 1: Capture Active Webpage Tab Viewport
-      setStatus('Capturing...', 'capturing');
+      setStatus('Capturing Viewport...', 'capturing');
 
       const activeTab = await getActiveWebTab();
 
@@ -196,8 +185,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const screenshotDataUrl = captureResponse.dataUrl;
 
-      // Step 2: Processing OCR Locally with Tesseract.js
-      setStatus('Processing OCR locally...', 'processing');
+      // Step 2: Processing OCR Locally with Tesseract.js WASM
+      setStatus('Running On-Device OCR & PII Detection...', 'processing');
 
       function downscaleImageForOCR(dataUrl, maxDimension = 1600) {
         return new Promise((resolve) => {
@@ -232,7 +221,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
 
-      console.log('[Parallax] Initializing local on-device Tesseract worker...');
       const worker = await Tesseract.createWorker('eng', 1, {
         workerPath: chrome.runtime.getURL('lib/worker.min.js'),
         corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js'),
@@ -247,7 +235,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
 
-      console.log('[Parallax] Running OCR recognition on captured screenshot...');
       const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
         text: true,
         blocks: true,
@@ -339,9 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           piiDetection.matches = PIIDetector.refineFaceBoundingBoxes(piiDetection.matches, img, width, height);
         }
 
-        console.log('🛡️ [Parallax] PII Detection Output:', piiDetection);
-
-        // 1. Render Original Canvas: Visual Hierarchy (Faint gray for non-PII, bold red/orange #E8491A for PII)
+        // 1. Render Original Canvas: Visual Hierarchy (Faint gray for non-PII, bold red/orange for PII)
         if (originalCanvas && originalWrapper) {
           originalCanvas.width = width;
           originalCanvas.height = height;
@@ -359,7 +344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
 
-          // Step 1A: Subtle low-opacity gray outline for non-PII text (shows OCR coverage without clutter)
+          // Step 1A: Subtle low-opacity gray outline for non-PII text
           ctx.lineWidth = 1;
           ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
           ctx.fillStyle = 'rgba(148, 163, 184, 0.04)';
@@ -403,7 +388,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        // 2. Render Sanitized Canvas: Dramatic Gaussian Frosted Blur + Dark Privacy Tint
+        // 2. Render Sanitized Canvas: Dramatic Gaussian Frosted Blur + Dark Privacy Tint + Mosaic Face
         if (sanitizedCanvas && sanitizedWrapper) {
           sanitizedCanvas.width = width;
           sanitizedCanvas.height = height;
@@ -457,7 +442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if ('msImageSmoothingEnabled' in sCtx) sCtx.msImageSmoothingEnabled = false;
                 sCtx.drawImage(off, 0, 0, cols, rows, rx, ry, rw, rh);
 
-                // Step 4: Draw Cyber Mosaic Grid Lines (TV & Security Censorship Style)
+                // Step 4: Draw Cyber Mosaic Grid Lines
                 sCtx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
                 sCtx.lineWidth = 1;
                 for (let c = 1; c < cols; c++) {
@@ -514,7 +499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Update UI Badges
         if (wordCountBadge) {
-          wordCountBadge.textContent = `${extractedWords.length} words`;
+          wordCountBadge.textContent = `${mergedWords.length} words`;
           wordCountBadge.style.display = 'inline-block';
         }
 
@@ -527,24 +512,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (auditDetectedCount) auditDetectedCount.textContent = piiDetection.matches.length;
         if (auditRedactedCount) auditRedactedCount.textContent = piiDetection.matches.length;
 
-        // Step 6: Update Results Area with Summary List
+        // Render Results Area
         renderResultsUI(piiDetection);
 
-        // Step 7: Update Status and Enable/Disable Send Button
-        if (piiDetection.isBlocked) {
-          setStatus('BLOCKED — Manual review required', 'blocked');
-          if (sendBtn) sendBtn.disabled = true;
-          if (auditActionStatus) auditActionStatus.textContent = 'BLOCKED (Review Required)';
-        } else {
-          setStatus('READY — Safe to proceed', 'ready');
-          if (sendBtn) sendBtn.disabled = false;
-          if (auditActionStatus) auditActionStatus.textContent = 'READY (Safe to Send)';
-        }
+        // Update Status & Toolbar
+        const count = piiDetection.matches.length;
+        setStatus(`Redaction Complete • ${count} Sensitive Region${count === 1 ? '' : 's'} Protected`, 'ready');
+        if (auditActionStatus) auditActionStatus.textContent = 'Protected (100% Local)';
+        if (redactionToolbar) redactionToolbar.style.display = 'flex';
 
-        // Step 8: Log Scan to Local IndexedDB (STRICT METADATA ONLY)
+        // Log Scan to Local IndexedDB (STRICT METADATA ONLY)
         try {
           const pageUrl = activeTab ? activeTab.url : window.location.href;
-          const logId = await ParallaxDB.addLog({
+          await ParallaxDB.addLog({
             pageUrl: pageUrl || 'active-tab',
             timestamp: new Date().toISOString(),
             detections: piiDetection.matches.map(m => ({
@@ -554,20 +534,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             })),
             redactedCount: piiDetection.matches.length,
             blocked: piiDetection.isBlocked,
-            actionType: null,
-            actionApproved: null
+            actionType: 'ON_DEVICE_REDACT',
+            actionApproved: true
           });
-          currentLogEntryId = logId;
           await renderPopupMetricsAndLogs();
         } catch (dbErr) {
           console.warn('[ParallaxDB] Popup logging error:', dbErr);
         }
 
-        // Cache scan data for dispatch
-        const sanitizedText = PIIDetector.generateSanitizedText(extractedWords, piiDetection.matches);
+        // Cache scan data for export actions
+        const sanitizedText = PIIDetector.generateSanitizedText(mergedWords, piiDetection.matches);
         currentScanData = {
           sanitized_ocr_text: sanitizedText,
-          extracted_words: extractedWords,
+          extracted_words: mergedWords,
           pii_matches: piiDetection.matches,
           status: piiDetection.status,
           is_blocked: piiDetection.isBlocked
@@ -579,7 +558,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       console.error('[Parallax] Error during scan / OCR / PII pipeline:', err);
       setStatus(`Error: ${err.message}`, 'error');
-      if (sendBtn) sendBtn.disabled = true;
       if (auditActionStatus) auditActionStatus.textContent = 'Error';
     } finally {
       isScanning = false;
@@ -592,6 +570,86 @@ document.addEventListener('DOMContentLoaded', async () => {
     scanBtn.addEventListener('click', performScan);
   }
 
+  // Handle Download Sanitized Image
+  if (downloadSanBtn) {
+    downloadSanBtn.addEventListener('click', () => {
+      if (!sanitizedCanvas || sanitizedCanvas.width === 0) {
+        setStatus('Scan the page first before downloading', 'warning');
+        return;
+      }
+      const link = document.createElement('a');
+      link.download = `parallax-redacted-${Date.now()}.png`;
+      link.href = sanitizedCanvas.toDataURL('image/png');
+      link.click();
+      setStatus('✓ Redacted image downloaded!', 'ready');
+    });
+  }
+
+  // Handle Copy Sanitized Image to Clipboard
+  if (copySanImgBtn) {
+    copySanImgBtn.addEventListener('click', () => {
+      if (!sanitizedCanvas || sanitizedCanvas.width === 0) {
+        setStatus('Scan the page first before copying', 'warning');
+        return;
+      }
+      sanitizedCanvas.toBlob(async (blob) => {
+        if (blob && navigator.clipboard && navigator.clipboard.write) {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            setStatus('✓ Redacted image copied to clipboard!', 'ready');
+          } catch (e) {
+            console.warn('[Parallax] Clipboard copy error:', e);
+            setStatus('Clipboard copy failed. Try downloading image.', 'warning');
+          }
+        }
+      });
+    });
+  }
+
+  // Handle Copy Sanitized Text
+  if (copySanTextBtn) {
+    copySanTextBtn.addEventListener('click', () => {
+      if (!currentScanData || !currentScanData.sanitized_ocr_text) {
+        setStatus('Scan the page first before copying text', 'warning');
+        return;
+      }
+      navigator.clipboard.writeText(currentScanData.sanitized_ocr_text).then(() => {
+        setStatus('✓ Sanitized OCR text copied to clipboard!', 'ready');
+      }).catch(err => {
+        console.warn('Clipboard write text error:', err);
+      });
+    });
+  }
+
+  // Handle In-Page Shield Overlay Toggle
+  if (toggleInPageShieldBtn) {
+    toggleInPageShieldBtn.addEventListener('click', async () => {
+      if (!currentScanData || !currentScanData.pii_matches) {
+        setStatus('Scan the page first to detect sensitive regions', 'warning');
+        return;
+      }
+      isInPageShieldActive = !isInPageShieldActive;
+      const activeTab = await getActiveWebTab();
+      if (activeTab && activeTab.id) {
+        chrome.tabs.sendMessage(activeTab.id, {
+          action: isInPageShieldActive ? 'APPLY_PAGE_SHIELD' : 'CLEAR_PAGE_SHIELD',
+          piiMatches: currentScanData.pii_matches
+        }, (res) => {
+          if (inPageShieldText) {
+            inPageShieldText.textContent = isInPageShieldActive ? 'Shield Active (Clear)' : 'Shield Webpage';
+          }
+          if (isInPageShieldActive) {
+            toggleInPageShieldBtn.classList.add('active');
+            setStatus('✓ Live in-page privacy masks applied to webpage!', 'ready');
+          } else {
+            toggleInPageShieldBtn.classList.remove('active');
+            setStatus('In-page privacy masks cleared', 'idle');
+          }
+        });
+      }
+    });
+  }
+
   // Render PII breakdown and status in results area
   function renderResultsUI(piiDetection) {
     if (!resultsDiv) return;
@@ -602,19 +660,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (summary.PHONE > 0) summaryParts.push(`${summary.PHONE} PHONE`);
     if (summary.OTP > 0) summaryParts.push(`${summary.OTP} OTP`);
     if (summary.CARD > 0) summaryParts.push(`${summary.CARD} CARD`);
+    if (summary.AVATAR > 0) summaryParts.push(`${summary.AVATAR} FACE/AVATAR`);
 
-    const summaryCountStr = summaryParts.length > 0 ? summaryParts.join(', ') : '0 sensitive entities';
-
-    const bannerClass = isBlocked ? 'banner-blocked' : 'banner-ready';
-    const iconSvg = isBlocked
-      ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`
-      : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+    const summaryCountStr = summaryParts.length > 0 ? summaryParts.join(' • ') : '0 sensitive entities';
 
     let html = `
-      <div class="results-banner ${bannerClass}">
+      <div class="results-banner banner-ready">
         <div class="banner-title">
-          ${iconSvg}
-          <span>Status: ${status}</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          <span>100% On-Device Redaction Applied</span>
         </div>
         <div class="banner-count">
           ${summary.total} sensitive region${summary.total === 1 ? '' : 's'} detected: ${summaryCountStr}
@@ -645,6 +699,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Mask string for UI list preview
   function maskPreview(text, type) {
     if (!text) return '';
+    if (type === 'AVATAR') return '🔒 Photographic Face Mask';
     if (type === 'CARD' || type === 'ACCOUNT_NUM') {
       const digits = text.replace(/\D/g, '');
       return `•••• •••• •••• ${digits.slice(-4)}`;
@@ -666,509 +721,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       return `${text.slice(0, 4)}•••••••`;
     }
     return text;
-  }
-
-  // Custom user prompt Enter key trigger
-  const userPromptInput = document.getElementById('userPromptInput');
-  if (userPromptInput && sendBtn) {
-    userPromptInput.addEventListener('input', () => {
-      sendBtn.disabled = false;
-    });
-
-    userPromptInput.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (!currentScanData) {
-          await performScan();
-        }
-        sendBtn.disabled = false;
-        sendBtn.click();
-      }
-    });
-  }
-
-  const chatHistory = [];
-  const popupChatHistory = document.getElementById('popupChatHistory');
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  function renderPopupChatHistory() {
-    if (!popupChatHistory) return;
-    if (chatHistory.length === 0) {
-      popupChatHistory.innerHTML = `<div id="proposedActionText" class="proposed-action-content" style="color: #64748b;">No conversation history yet. Send sanitized context to start.</div>`;
-      return;
-    }
-
-    let html = '';
-    for (const item of chatHistory) {
-      if (item.type === 'user') {
-        html += `
-          <div class="chat-msg-user">
-            <div class="chat-msg-user-hdr">
-              <span>👤 OPERATOR QUERY</span>
-              <span style="font-family: var(--font-mono); font-size: 10px; color: #64748b;">${item.timestamp}</span>
-            </div>
-            <div class="chat-msg-user-text">${escapeHtml(item.text)}</div>
-          </div>
-        `;
-      } else if (item.type === 'thinking') {
-        html += `
-          <div class="chat-msg-thinking">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="ptb-spin" style="animation: spin 1s infinite linear;">
-              <circle cx="12" cy="12" r="10" stroke-opacity="0.3"></circle>
-              <path d="M12 2a10 10 0 0 1 10 10"></path>
-            </svg>
-            <span>${escapeHtml(item.text)}</span>
-          </div>
-        `;
-      } else if (item.type === 'ai') {
-        const d = item.data;
-        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; border: 1px solid rgba(0, 242, 254, 0.3);">🤖 ${escapeHtml(d.model || 'openai/gpt-oss-120b (Groq Live)')}</span>`;
-        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3);">${Math.round((d.confidence || 0.98) * 100)}% Conf</span>`;
-        const actionTypeStr = (d.action_type || 'GUIDANCE').toUpperCase();
-
-        html += `
-          <div class="chat-msg-ai">
-            <div class="chat-msg-ai-hdr">
-              <div class="chat-msg-ai-title">
-                <span>🤖 LIVE AI AGENT</span>
-                <span class="action-tag" style="font-size: 9.5px; padding: 2px 6px;">${actionTypeStr}</span>
-              </div>
-              <div style="display: flex; gap: 5px; align-items: center;">
-                ${modelBadge}
-                ${confidenceBadge}
-              </div>
-            </div>
-            <div class="proposed-action-content">
-              <div style="font-size: 11px; color: #00f2fe; font-weight: 700; margin-bottom: 5px; letter-spacing: 0.3px;">💡 Cloud LLM Rationale &amp; Perception:</div>
-              <div style="font-size: 12px; color: #f8fafc; line-height: 1.55; white-space: pre-wrap;">${escapeHtml(d.rationale || d.content || '')}</div>
-              ${d.selector ? `
-                <div style="margin-top: 8px; font-size: 11.5px; color: #cbd5e1; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08);">
-                  <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 2px 5px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px;">${escapeHtml(d.action_type || 'fill_field')} -&gt; ${escapeHtml(d.selector)}</code>
-                  ${d.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${escapeHtml(d.value)}"</span>` : ''}
-                </div>
-              ` : ''}
-              <div style="font-size: 10px; color: #38bdf8; margin-top: 8px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 5px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
-                <span>🖼️ Redacted Image: <strong>${d.payload_proof?.redacted_image_kb || 42} KB</strong></span>
-                <span>🔒 Raw PII: <strong style="color: #10b981;">0 Bytes</strong></span>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-    }
-
-    popupChatHistory.innerHTML = html;
-    setTimeout(() => {
-      popupChatHistory.scrollTop = popupChatHistory.scrollHeight;
-    }, 20);
-  }
-
-  // Handle "Send Sanitized Context" button click (Real Backend API Call)
-  if (sendBtn) {
-    sendBtn.addEventListener('click', async () => {
-      if (!currentScanData) {
-        setStatus('Scanning page before sending...', 'processing');
-        await performScan();
-      }
-
-      if (!currentScanData) {
-        setStatus('Scan failed. Please try again.', 'error');
-        sendBtn.disabled = false;
-        return;
-      }
-
-      const selectedTask = taskSelect ? taskSelect.value : 'auto_guide';
-      const sanitizedImageDataUrl = sanitizedCanvas ? sanitizedCanvas.toDataURL('image/jpeg', 0.8) : '';
-
-      setStatus('Sending sanitized context...', 'processing');
-      sendBtn.disabled = true;
-      const promptEl = document.getElementById('userPromptInput');
-      const customPrompt = promptEl ? promptEl.value.trim() : '';
-      const promptError = document.getElementById('popupPromptError');
-
-      // Client-Side Action Constraint Validation (Only allows Summarize Page & Fill Form Field)
-      if (customPrompt) {
-        const lower = customPrompt.toLowerCase();
-        const isSummarize = lower.includes('summar') || lower.includes('overview') || lower.includes('brief') || lower.includes('tl;dr') || lower.includes('what is');
-        const isFill = lower.includes('fill') || lower.includes('input') || lower.includes('type') || lower.includes('form') || lower.includes('roll') || lower.includes('city') || lower.includes('name') || lower.includes('enter') || lower.includes('guide') || lower.includes('auto') || lower.includes('click') || lower.includes('next') || lower.includes('meeting') || lower.includes('login') || lower.includes('submit');
-
-        if (!isSummarize && !isFill) {
-          if (promptError) {
-            promptError.style.display = 'block';
-            setTimeout(() => { if (promptError) promptError.style.display = 'none'; }, 4500);
-          }
-          setStatus('Action not supported in current build', 'warning');
-          sendBtn.disabled = false;
-          return;
-        }
-      }
-      if (promptError) promptError.style.display = 'none';
-
-      // Push user query & thinking indicator into chatHistory
-      const queryText = customPrompt || (selectedTask === 'auto_guide' ? 'Guide: Analyze page and determine next optimal action' : `Task: ${selectedTask}`);
-      chatHistory.push({
-        type: 'user',
-        text: queryText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-      chatHistory.push({
-        type: 'thinking',
-        text: 'Consulting Live Cloud LLM with sanitized on-device context...'
-      });
-
-      if (approvalCard) {
-        approvalCard.style.display = 'flex';
-      }
-      renderPopupChatHistory();
-
-      const payload = {
-        sanitized_ocr_text: currentScanData.sanitized_ocr_text,
-        sanitized_image: sanitizedImageDataUrl,
-        task: selectedTask,
-        user_prompt: customPrompt,
-        page_type: 'webpage'
-      };
-
-      try {
-        let response = null;
-        try {
-          response = await fetch('http://localhost:3001/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        } catch (e1) {
-          response = await fetch('http://127.0.0.1:3001/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        }
-
-        if (!response || !response.ok) {
-          throw new Error(`Server returned HTTP ${response ? response.status : 'offline'}`);
-        }
-
-        const data = await response.json();
-        currentProposedAction = data;
-
-        if (currentLogEntryId != null) {
-          await ParallaxDB.updateLog(currentLogEntryId, {
-            actionType: data.action_type || selectedTask,
-            actionApproved: null
-          });
-          await renderPopupMetricsAndLogs();
-        }
-
-        if (auditActionStatus) auditActionStatus.textContent = 'Awaiting Approval';
-        setStatus('Action Proposed — Awaiting Approval', 'active');
-
-        // Present Human-in-the-Loop Approval Card
-        if (actionTypeTag) actionTypeTag.textContent = (data.action_type || selectedTask).toUpperCase();
-        if (actionFeedback) actionFeedback.style.display = 'none';
-        if (approveBtn) approveBtn.disabled = false;
-        if (rejectBtn) rejectBtn.disabled = false;
-
-        // Replace thinking indicator with AI response
-        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-        if (thinkingIdx !== -1) {
-          chatHistory.splice(thinkingIdx, 1);
-        }
-        chatHistory.push({
-          type: 'ai',
-          data: data,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        });
-        renderPopupChatHistory();
-
-        if (approvalCard) {
-          approvalCard.style.display = 'flex';
-          setTimeout(() => {
-            approvalCard.scrollIntoView({ behavior: 'smooth' });
-          }, 50);
-        }
-
-      } catch (err) {
-        console.error('[Parallax] Failed to send sanitized context to backend:', err);
-        const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-        if (thinkingIdx !== -1) {
-          chatHistory.splice(thinkingIdx, 1);
-        }
-        chatHistory.push({
-          type: 'ai',
-          data: {
-            action_type: 'ERROR',
-            model: 'Parallax Error',
-            confidence: 0,
-            rationale: `Failed to consult AI agent: ${err.message}. Ensure backend is running with "node server.js".`
-          },
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        });
-        renderPopupChatHistory();
-
-        const isOffline = err.message && (err.message.includes('Failed to fetch') || err.message.includes('offline'));
-        const errorMsg = isOffline ? 'Backend Offline: Start backend with "npm start" (http://localhost:3001)' : `Backend Error: ${err.message}`;
-        setStatus(errorMsg, 'error');
-        if (auditActionStatus) auditActionStatus.textContent = isOffline ? 'Backend Offline' : 'Backend Error';
-      } finally {
-        sendBtn.disabled = false;
-      }
-    });
-  }
-
-  // Handle Action Approval
-  if (approveBtn) {
-    approveBtn.addEventListener('click', async () => {
-      if (!currentProposedAction) return;
-
-      approveBtn.disabled = true;
-      if (rejectBtn) rejectBtn.disabled = true;
-      if (auditActionStatus) auditActionStatus.textContent = 'Approved (Executing)';
-
-      if (currentLogEntryId != null) {
-        await ParallaxDB.updateLog(currentLogEntryId, {
-          actionType: currentProposedAction.action_type || 'fill_field',
-          actionApproved: true
-        });
-        await renderPopupMetricsAndLogs();
-      }
-
-      if (currentProposedAction.action_type === 'click' || currentProposedAction.action_type === 'fill_field') {
-        try {
-          const activeTab = await getActiveWebTab();
-          if (!activeTab || !activeTab.id) {
-            throw new Error('Could not find active browser tab.');
-          }
-
-          const targetSelector = currentProposedAction.selector || '#city';
-          const fillValue = currentProposedAction.value;
-          const isClickAction = currentProposedAction.action_type === 'click';
-
-          let executed = false;
-          if (chrome.scripting) {
-            try {
-              const [res] = await chrome.scripting.executeScript({
-                target: { tabId: activeTab.id },
-                func: (sel, val, isClick) => {
-                  // 1. Try querySelector directly
-                  let el = document.querySelector(sel);
-
-                  // 2. Fallback: Search buttons, links, and inputs by visible text
-                  if (!el && isClick) {
-                    const cleanTarget = sel.toLowerCase().replace(/button|link|icon|\[|\]/g, '').trim();
-                    const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], span, div'));
-                    el = candidates.find(c => (c.innerText || c.textContent || '').trim().toLowerCase().includes(cleanTarget));
-                  }
-
-                  if (el) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    el.focus();
-
-                    if (isClick) {
-                      (el).click();
-                      return { success: true, matched: el.tagName + ' (Clicked)' };
-                    } else if (val) {
-                      (el).value = val;
-                      el.dispatchEvent(new Event('input', { bubbles: true }));
-                      el.dispatchEvent(new Event('change', { bubbles: true }));
-                      return { success: true, matched: el.tagName + ' (Filled)' };
-                    }
-                  }
-                  return { success: false, reason: 'Target not found' };
-                },
-                args: [targetSelector, fillValue, isClickAction]
-              });
-              executed = res?.result?.success;
-            } catch (scriptErr) {
-              console.warn('[Parallax] Scripting execution warning:', scriptErr);
-            }
-          }
-
-          if (actionFeedback) {
-            actionFeedback.className = 'action-feedback feedback-success';
-            actionFeedback.textContent = isClickAction
-              ? `✓ Approved & Executed: Clicked "${targetSelector}" on page!`
-              : `✓ Approved & Executed: Filled "${targetSelector}" with "${fillValue}"!`;
-            actionFeedback.style.display = 'block';
-          }
-          setStatus('Action Approved & Executed', 'ready');
-          if (auditActionStatus) auditActionStatus.textContent = 'Approved & Executed';
-
-        } catch (execError) {
-          console.error('[Parallax] Execution note:', execError);
-          if (actionFeedback) {
-            actionFeedback.className = 'action-feedback feedback-success';
-            actionFeedback.textContent = `✓ Action Approved by Operator.`;
-            actionFeedback.style.display = 'block';
-          }
-          setStatus('Approved', 'ready');
-        }
-      } else {
-        if (actionFeedback) {
-          actionFeedback.className = 'action-feedback feedback-success';
-          actionFeedback.textContent = '✓ Summary Approved & Accepted by Human Operator';
-          actionFeedback.style.display = 'block';
-        }
-        setStatus('Summary Approved', 'ready');
-        if (auditActionStatus) auditActionStatus.textContent = 'Approved';
-      }
-    });
-  }
-
-  // Handle Action Rejection
-  if (rejectBtn) {
-    rejectBtn.addEventListener('click', async () => {
-      if (approveBtn) approveBtn.disabled = true;
-      rejectBtn.disabled = true;
-      if (auditActionStatus) auditActionStatus.textContent = 'Rejected';
-
-      if (currentLogEntryId != null) {
-        await ParallaxDB.updateLog(currentLogEntryId, {
-          actionType: currentProposedAction ? currentProposedAction.action_type : 'action',
-          actionApproved: false
-        });
-        await renderPopupMetricsAndLogs();
-      }
-
-      if (actionFeedback) {
-        actionFeedback.className = 'action-feedback feedback-cancel';
-        actionFeedback.textContent = '✕ Action Cancelled / Rejected by User';
-        actionFeedback.style.display = 'block';
-      }
-      setStatus('Action Cancelled', 'idle');
-
-      setTimeout(() => {
-        if (approvalCard) approvalCard.style.display = 'none';
-        if (sendBtn) sendBtn.disabled = false;
-        currentProposedAction = null;
-      }, 2000);
-    });
-  }
-
-  // Handle Popup Follow-up Question Submission
-  const popupFollowupInput = document.getElementById('popupFollowupInput');
-  const popupFollowupBtn = document.getElementById('popupFollowupBtn');
-
-  async function handlePopupFollowup() {
-    if (!popupFollowupInput) return;
-    const query = popupFollowupInput.value.trim();
-    if (!query) return;
-
-    if (!currentScanData) {
-      await performScan();
-    }
-    if (!currentScanData) return;
-
-    // Append user question & thinking indicator into chatHistory
-    chatHistory.push({
-      type: 'user',
-      text: query,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    });
-    chatHistory.push({
-      type: 'thinking',
-      text: `Consulting Live Cloud LLM on: "${query}"...`
-    });
-    renderPopupChatHistory();
-    popupFollowupInput.value = '';
-
-    if (popupFollowupBtn) popupFollowupBtn.disabled = true;
-    if (approveBtn) approveBtn.disabled = true;
-    if (rejectBtn) rejectBtn.disabled = true;
-    setStatus('Processing Follow-Up...', 'processing');
-
-    try {
-      const sanitizedImageDataUrl = sanitizedCanvas ? sanitizedCanvas.toDataURL('image/jpeg', 0.8) : '';
-      const payload = {
-        sanitized_ocr_text: currentScanData.sanitized_ocr_text,
-        sanitized_image: sanitizedImageDataUrl,
-        task: 'auto_guide',
-        user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`,
-        page_type: 'webpage'
-      };
-
-      let response = null;
-      try {
-        response = await fetch('http://localhost:3001/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch (e1) {
-        response = await fetch('http://127.0.0.1:3001/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
-
-      if (!response || !response.ok) {
-        throw new Error(`Backend Offline: Start backend with "npm start" (HTTP ${response ? response.status : 'offline'})`);
-      }
-
-      const data = await response.json();
-      currentProposedAction = data;
-
-      if (actionTypeTag) actionTypeTag.textContent = (data.action_type || 'GUIDANCE').toUpperCase();
-      if (actionFeedback) actionFeedback.style.display = 'none';
-      if (approveBtn) approveBtn.disabled = false;
-      if (rejectBtn) rejectBtn.disabled = false;
-
-      // Replace thinking indicator with AI response
-      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-      if (thinkingIdx !== -1) {
-        chatHistory.splice(thinkingIdx, 1);
-      }
-      chatHistory.push({
-        type: 'ai',
-        data: data,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-      renderPopupChatHistory();
-      setStatus('Follow-up Answered', 'ready');
-
-    } catch (err) {
-      console.error('[Parallax] Popup Follow-up Error:', err);
-      const thinkingIdx = chatHistory.findIndex(m => m.type === 'thinking');
-      if (thinkingIdx !== -1) {
-        chatHistory.splice(thinkingIdx, 1);
-      }
-      chatHistory.push({
-        type: 'ai',
-        data: {
-          action_type: 'ERROR',
-          model: 'Parallax Error',
-          confidence: 0,
-          rationale: `Follow-up error: ${err.message}`
-        },
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-      renderPopupChatHistory();
-      setStatus(`Follow-up Error: ${err.message}`, 'error');
-    } finally {
-      if (popupFollowupBtn) popupFollowupBtn.disabled = false;
-      if (approveBtn) approveBtn.disabled = false;
-      if (rejectBtn) rejectBtn.disabled = false;
-    }
-  }
-
-  if (popupFollowupBtn) popupFollowupBtn.addEventListener('click', handlePopupFollowup);
-  if (popupFollowupInput) {
-    popupFollowupInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handlePopupFollowup();
-      }
-    });
   }
 
   // --------------------------------------------------------------------------
@@ -1220,8 +772,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function applyPopFsZoom() {
-    if (popFsCanvas) popFsCanvas.style.transform = `scale(${popFsZoom})`;
-    if (popFsZoomLevel) popFsZoomLevel.textContent = `${Math.round(popFsZoom * 100)}%`;
+    if (popFsCanvas) {
+      popFsCanvas.style.transform = `scale(${popFsZoom})`;
+    }
+    if (popFsZoomLevel) {
+      popFsZoomLevel.textContent = `${Math.round(popFsZoom * 100)}%`;
+    }
   }
 
   function openPopFs(mode = 'original') {
@@ -1240,40 +796,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (popFsCloseBtn) popFsCloseBtn.addEventListener('click', closePopFs);
   if (popFsBackdrop) popFsBackdrop.addEventListener('click', closePopFs);
 
-  if (popFsTabOrig) {
-    popFsTabOrig.addEventListener('click', () => {
-      popFsMode = 'original';
-      renderPopFsCanvas();
-    });
-  }
+  if (popFsTabOrig) popFsTabOrig.addEventListener('click', () => { popFsMode = 'original'; renderPopFsCanvas(); });
+  if (popFsTabSan) popFsTabSan.addEventListener('click', () => { popFsMode = 'sanitized'; renderPopFsCanvas(); });
 
-  if (popFsTabSan) {
-    popFsTabSan.addEventListener('click', () => {
-      popFsMode = 'sanitized';
-      renderPopFsCanvas();
-    });
-  }
-
-  if (popFsZoomInBtn) {
-    popFsZoomInBtn.addEventListener('click', () => {
-      popFsZoom = Math.min(3.0, popFsZoom + 0.25);
-      applyPopFsZoom();
-    });
-  }
-
-  if (popFsZoomOutBtn) {
-    popFsZoomOutBtn.addEventListener('click', () => {
-      popFsZoom = Math.max(0.5, popFsZoom - 0.25);
-      applyPopFsZoom();
-    });
-  }
-
-  if (popFsZoomResetBtn) {
-    popFsZoomResetBtn.addEventListener('click', () => {
-      popFsZoom = 1.0;
-      applyPopFsZoom();
-    });
-  }
+  if (popFsZoomInBtn) popFsZoomInBtn.addEventListener('click', () => { popFsZoom = Math.min(3.0, popFsZoom + 0.25); applyPopFsZoom(); });
+  if (popFsZoomOutBtn) popFsZoomOutBtn.addEventListener('click', () => { popFsZoom = Math.max(0.4, popFsZoom - 0.25); applyPopFsZoom(); });
+  if (popFsZoomResetBtn) popFsZoomResetBtn.addEventListener('click', () => { popFsZoom = 1.0; applyPopFsZoom(); });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && popFsModal && popFsModal.classList.contains('open')) {
@@ -1281,4 +809,3 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 });
-

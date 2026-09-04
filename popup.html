@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Parallax - Privacy-Preserving Perception Sidebar</title>
+  <title>Parallax - On-Device Privacy & Redaction Shield</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -13,17 +13,13 @@
       <div class="brand-row">
         <div class="logo-badge">
           <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <circle cx="12" cy="12" r="4"></circle>
-            <line x1="4.93" y1="4.93" x2="9.17" y2="9.17"></line>
-            <line x1="14.83" y1="14.83" x2="19.07" y2="19.07"></line>
-            <line x1="14.83" y1="9.17" x2="19.07" y2="4.93"></line>
-            <line x1="4.93" y1="19.07" x2="9.17" y2="14.83"></line>
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <circle cx="12" cy="11" r="3"></circle>
           </svg>
         </div>
         <div class="brand-text">
           <h1 class="brand-title">PARALLAX</h1>
-          <span class="brand-subtitle">On-Device Privacy & Perception Sidebar</span>
+          <span class="brand-subtitle">On-Device Privacy & Redaction Shield</span>
         </div>
       </div>
 
@@ -38,7 +34,7 @@
 
         <div class="privacy-badge">
           <span class="pulse-dot"></span>
-          <span>100% LOCAL OCR</span>
+          <span>100% LOCAL ON-DEVICE</span>
         </div>
       </div>
     </header>
@@ -47,47 +43,50 @@
     <section class="controls-section">
       <div class="action-buttons-row">
         <button id="scanBtn" class="primary-btn">
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="3" y1="9" x2="21" y2="9"></line>
-            <line x1="9" y1="21" x2="9" y2="9"></line>
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <circle cx="12" cy="11" r="3"></circle>
           </svg>
-          <span>Scan Current Page</span>
+          <span>Scan & Redact Current Page</span>
         </button>
-
-        <div class="task-selector-wrap">
-          <select id="taskSelect" class="task-dropdown" title="Select Backend Agent Action">
-            <option value="auto_guide">🤖 Auto-Guide (Next Safest Action)</option>
-            <option value="fill_field">📝 Auto-Fill Form Fields</option>
-            <option value="summarize">📋 Summarize Page Context</option>
-          </select>
-        </div>
       </div>
 
-      <!-- Custom AI Prompt Input -->
-      <div class="prompt-input-wrap">
-        <input type="text" id="userPromptInput" class="custom-prompt-input" placeholder="💬 E.g. 'Fill form' or 'Summarize'..." />
-        <div id="popupPromptHelper" class="prompt-helper-text">
-          Available actions: <strong class="helper-keyword">Summarize Page</strong> • <strong class="helper-keyword">Fill Form Field</strong>
-        </div>
-        <div id="popupPromptError" class="prompt-error-box" style="display: none;">
-          ⚠️ This action isn't supported in the current build. Supported: Summarize Page, Fill Form Field.
-        </div>
-      </div>
-
-      <div class="send-btn-wrap">
-        <button id="sendBtn" class="send-btn">
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+      <!-- Quick Redaction Export Toolbar -->
+      <div class="redaction-toolbar" id="redactionToolbar" style="display: none;">
+        <button id="downloadSanBtn" class="tool-btn" title="Download Redacted Image as PNG">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          <span>Send Sanitized Context</span>
+          <span>Save PNG</span>
+        </button>
+        <button id="copySanImgBtn" class="tool-btn" title="Copy Redacted Image to Clipboard">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span>Copy Image</span>
+        </button>
+        <button id="copySanTextBtn" class="tool-btn" title="Copy Sanitized OCR Text">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polyline points="4 7 4 4 20 4 20 7"></polyline>
+            <line x1="9" y1="20" x2="15" y2="20"></line>
+            <line x1="12" y1="4" x2="12" y2="20"></line>
+          </svg>
+          <span>Copy Text</span>
+        </button>
+        <button id="toggleInPageShieldBtn" class="tool-btn tool-btn-accent" title="Apply Live Blackout Mask on Current Webpage">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <span id="inPageShieldText">Shield Webpage</span>
         </button>
       </div>
 
       <div class="status-card">
         <span class="status-label">Status:</span>
-        <span id="statusText" class="status-value status-idle">Idle</span>
+        <span id="statusText" class="status-value status-idle">Ready to scan & redact</span>
       </div>
     </section>
 
@@ -107,7 +106,7 @@
       </div>
       <div class="stat-card">
         <span class="stat-num stat-approved" id="popStatApproved">0</span>
-        <span class="stat-label">APPROVED</span>
+        <span class="stat-label">SAFE SCANS</span>
       </div>
     </section>
 
@@ -133,7 +132,7 @@
               <line x1="8" y1="21" x2="16" y2="21"></line>
               <line x1="12" y1="17" x2="12" y2="21"></line>
             </svg>
-            <p>Click "Scan Current Page" to capture viewport</p>
+            <p>Click "Scan & Redact Current Page" to capture viewport</p>
           </div>
         </div>
       </div>
@@ -143,7 +142,7 @@
         <div class="preview-header">
           <div class="preview-title-wrap">
             <span class="panel-indicator sanitized-indicator"></span>
-            <span class="preview-title">Sanitized (PII Redacted)</span>
+            <span class="preview-title">Sanitized (PII Blackouts & Mosaic Faces)</span>
           </div>
           <div class="preview-header-right">
             <span id="redactedCountBadge" class="redacted-badge" style="display: none;">0 Redacted</span>
@@ -165,59 +164,16 @@
     <!-- Results Area (PII Breakdown & Gate Status) -->
     <div id="results" class="results-container"></div>
 
-    <!-- Human-in-the-Loop Safe Approval Card (Dynamic) -->
-    <div id="approvalCard" class="approval-card" style="display: none;">
-      <div class="approval-header">
-        <div class="approval-badge-wrap">
-          <span class="approval-pulse"></span>
-          <span class="approval-title">Human-in-the-Loop Action Approval</span>
-        </div>
-        <span id="actionTypeTag" class="action-tag">ACTION</span>
-      </div>
-
-      <div class="approval-body">
-        <div class="proposed-action-label">AI Conversation & Guidance History:</div>
-        <div class="popup-chat-history" id="popupChatHistory">
-          <div id="proposedActionText" class="proposed-action-content"></div>
-        </div>
-
-        <!-- Follow-up Question Input -->
-        <div class="popup-followup-row">
-          <input type="text" id="popupFollowupInput" class="popup-followup-input" placeholder="💬 Ask follow-up question (e.g. 'What next?')..." />
-          <button id="popupFollowupBtn" class="popup-followup-btn">Ask AI</button>
-        </div>
-      </div>
-
-      <div class="approval-actions">
-        <button id="approveBtn" class="approve-btn">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-          <span>Approve Action</span>
-        </button>
-
-        <button id="rejectBtn" class="reject-btn">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-          <span>Reject</span>
-        </button>
-      </div>
-
-      <div id="actionFeedback" class="action-feedback" style="display: none;"></div>
-    </div>
-
     <!-- Collapsible Local-Only IndexedDB Detection Audit Log -->
     <section class="detection-log-section">
-      <details class="log-details">
+      <details class="log-details" open>
         <summary class="log-summary">
           <div class="summary-left">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
             </svg>
-            <span>View Local Detection Log (IndexedDB)</span>
+            <span>Local Detection Audit Log (IndexedDB • Metadata Only)</span>
           </div>
           <span class="toggle-arrow">▾</span>
         </summary>
@@ -235,7 +191,7 @@
                   <th>PAGE URL</th>
                   <th>TYPES</th>
                   <th>STATUS</th>
-                  <th>ACTION</th>
+                  <th>PRIVACY OUTCOME</th>
                 </tr>
               </thead>
               <tbody id="popLogTableBody">
@@ -278,11 +234,11 @@
               <span id="auditRedactedCount" class="audit-val">0</span>
             </div>
             <div class="audit-item">
-              <span class="audit-key">Backend Handoff:</span>
-              <span class="audit-val audit-safe">Sanitized only</span>
+              <span class="audit-key">Processing Pipeline:</span>
+              <span class="audit-val audit-safe">100% On-Device WASM</span>
             </div>
             <div class="audit-item">
-              <span class="audit-key">Action Status:</span>
+              <span class="audit-key">Redaction Status:</span>
               <span id="auditActionStatus" class="audit-val">Idle</span>
             </div>
           </div>
