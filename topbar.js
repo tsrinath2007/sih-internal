@@ -495,14 +495,14 @@ document.addEventListener('DOMContentLoaded', async () => {
               for (const match of piiDetection.matches) {
                 const { x, y, width: bw, height: bh } = match.bbox;
                 const pad = 4;
-                const rx = Math.max(0, x - pad);
-                const ry = Math.max(0, y - pad);
-                const rw = bw + pad * 2;
-                const rh = bh + pad * 2;
+                const rx = Math.max(0, Math.floor(x - pad));
+                const ry = Math.max(0, Math.floor(y - pad));
+                const rw = Math.min(width - rx, Math.ceil(bw + pad * 2));
+                const rh = Math.min(height - ry, Math.ceil(bh + pad * 2));
 
                 const isAvatar = match.type === 'AVATAR';
                 const tagColor = isAvatar ? '#a855f7' : '#E8491A';
-                const tagBg = isAvatar ? 'rgba(168, 85, 247, 0.22)' : 'rgba(232, 73, 26, 0.22)';
+                const tagBg = isAvatar ? 'rgba(168, 85, 247, 0.18)' : 'rgba(232, 73, 26, 0.22)';
 
                 ctx.lineWidth = 3;
                 ctx.strokeStyle = tagColor;
@@ -539,44 +539,49 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (isAvatar) {
                   // --- TRUE PHOTOGRAPHIC GAUSSIAN BLUR (Soft Frosted Face Privacy) ---
                   const pad = 4;
-                  const rx = Math.max(0, x - pad);
-                  const ry = Math.max(0, y - pad);
-                  const rw = bw + pad * 2;
-                  const rh = bh + pad * 2;
-                  const radius = Math.min(rw, rh) / 2;
+                  const rx = Math.max(0, Math.floor(x - pad));
+                  const ry = Math.max(0, Math.floor(y - pad));
+                  const rw = Math.min(width - rx, Math.ceil(bw + pad * 2));
+                  const rh = Math.min(height - ry, Math.ceil(bh + pad * 2));
 
-                  sCtx.save();
-                  sCtx.beginPath();
-                  if (typeof sCtx.roundRect === 'function') {
-                    sCtx.roundRect(rx, ry, rw, rh, [radius]);
-                  } else {
-                    sCtx.arc(rx + rw / 2, ry + rh / 2, radius, 0, Math.PI * 2);
-                  }
-                  sCtx.clip();
+                  if (rw > 4 && rh > 4) {
+                    const isSmallIcon = (rw <= 140 && rh <= 140) && Math.abs(rw - rh) / Math.max(rw, rh) < 0.2;
+                    const radius = isSmallIcon ? Math.min(rw, rh) / 2 : Math.min(16, rw * 0.05, rh * 0.05);
 
-                  // Step 1: Multi-Pass Downscale-Upscale Extreme Gaussian Blur
-                  const off = document.createElement('canvas');
-                  const scaleF = 0.04; // 4% downscale = silky smooth heavy photographic blur
-                  off.width = Math.max(3, Math.round(rw * scaleF));
-                  off.height = Math.max(3, Math.round(rh * scaleF));
-                  const oCtx = off.getContext('2d');
-                  oCtx.drawImage(img, rx, ry, rw, rh, 0, 0, off.width, off.height);
+                    sCtx.save();
+                    sCtx.beginPath();
+                    if (typeof sCtx.roundRect === 'function') {
+                      sCtx.roundRect(rx, ry, rw, rh, [radius]);
+                    } else {
+                      sCtx.rect(rx, ry, rw, rh);
+                    }
+                    sCtx.clip();
 
-                  sCtx.imageSmoothingEnabled = true;
-                  sCtx.imageSmoothingQuality = 'high';
-                  sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
+                    // Step 1: Multi-Pass Downscale-Upscale Extreme Gaussian Blur
+                    const off = document.createElement('canvas');
+                    const scaleF = 0.035; // 3.5% downscale = silky smooth heavy photographic blur
+                    off.width = Math.max(4, Math.round(rw * scaleF));
+                    off.height = Math.max(4, Math.round(rh * scaleF));
+                    const oCtx = off.getContext('2d');
+                    oCtx.drawImage(img, rx, ry, rw, rh, 0, 0, off.width, off.height);
 
-                  // Step 2: Native Canvas filter blur for ultra-smooth frosted photo appearance
-                  try {
-                    sCtx.filter = 'blur(16px)';
+                    sCtx.imageSmoothingEnabled = true;
+                    sCtx.imageSmoothingQuality = 'high';
                     sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
-                  } catch (e) {}
 
-                  // Step 3: Delicate Frosted Glass Privacy Sheen (Preserves all photo colors while fully obscuring features)
-                  sCtx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-                  sCtx.fillRect(rx, ry, rw, rh);
+                    // Step 2: Native Canvas filter blur for ultra-smooth frosted photo appearance
+                    try {
+                      sCtx.filter = 'blur(20px)';
+                      sCtx.drawImage(off, 0, 0, off.width, off.height, rx, ry, rw, rh);
+                      sCtx.filter = 'none';
+                    } catch (e) {}
 
-                  sCtx.restore();
+                    // Step 3: Delicate Frosted Glass Privacy Sheen
+                    sCtx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+                    sCtx.fillRect(rx, ry, rw, rh);
+
+                    sCtx.restore();
+                  }
 
                 } else {
                   // --- TEXT PII REDACTION (Dramatic Pitch-Black Solid Redaction Box) ---

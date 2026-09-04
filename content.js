@@ -140,54 +140,77 @@
       }
     }
 
-    // Auto-detect User Avatars, Profile Pictures, and Circular Face Photos for Anonymization
-    const avatarCandidates = document.querySelectorAll('img, image, [role="img"], svg, [style*="background-image"]');
+    // Auto-detect User Avatars, Profile Pictures, Headshots, and Photos for Anonymization
+    const avatarCandidates = document.querySelectorAll('img, image, [role="img"], svg, picture, [style*="background-image"], [class*="avatar"], [class*="profile"], [class*="photo"], [class*="picture"], [id*="avatar"], [id*="profile"], [id*="photo"]');
     for (const el of avatarCandidates) {
-      if (el.id === 'parallax-topbar-iframe') continue;
+      if (el.id === 'parallax-topbar-iframe' || el.closest('#parallax-topbar-iframe')) continue;
 
       const rect = el.getBoundingClientRect();
-      if (rect.width >= 24 && rect.width <= 240 && rect.height >= 24 && rect.height <= 240 && rect.bottom > 0 && rect.top < window.innerHeight) {
+      if (rect.width >= 20 && rect.width <= 2500 && rect.height >= 20 && rect.height <= 2500 && rect.bottom > 0 && rect.top < window.innerHeight) {
         const classStr = (el.getAttribute('class') || el.className?.baseVal || el.className || '').toString().toLowerCase();
+        const idStr = (el.getAttribute('id') || '').toLowerCase();
         const srcStr = (el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('xlink:href') || el.src || '').toLowerCase();
         const styleStr = (el.getAttribute('style') || '').toLowerCase();
         const altStr = (el.getAttribute('alt') || '').toLowerCase();
         const ariaStr = (el.getAttribute('aria-label') || el.parentElement?.getAttribute('aria-label') || '').toLowerCase();
         const parentClass = (el.parentElement?.getAttribute('class') || '').toLowerCase();
+        const parentId = (el.parentElement?.getAttribute('id') || '').toLowerCase();
+        const tagName = el.tagName.toUpperCase();
 
-        // Check if this image element is a genuine user avatar / profile photo
+        // Check if this image element is a genuine user avatar, profile photo, or photo
         const isAvatar = 
+          tagName === 'IMG' ||
+          tagName === 'PICTURE' ||
           srcStr.includes('googleusercontent.com') ||
           srcStr.includes('avatar') ||
           srcStr.includes('profile') ||
           srcStr.includes('user') ||
           srcStr.includes('photo') ||
+          srcStr.includes('person') ||
           srcStr.includes('gravatar') ||
           srcStr.includes('twimg.com/profile_images') ||
           srcStr.includes('githubusercontent.com/u') ||
-          styleStr.includes('googleusercontent') ||
-          styleStr.includes('avatar') ||
+          srcStr.includes('fbcdn') ||
+          srcStr.includes('media') ||
+          srcStr.includes('upload') ||
+          styleStr.includes('background-image') ||
           classStr.includes('avatar') ||
-          classStr.includes('profile-pic') ||
-          classStr.includes('user-avatar') ||
+          classStr.includes('profile') ||
+          classStr.includes('user') ||
+          classStr.includes('photo') ||
+          classStr.includes('picture') ||
+          idStr.includes('avatar') ||
+          idStr.includes('profile') ||
+          idStr.includes('photo') ||
           parentClass.includes('avatar') ||
+          parentClass.includes('profile') ||
+          parentId.includes('avatar') ||
+          parentId.includes('profile') ||
           altStr.includes('profile') ||
           altStr.includes('avatar') ||
           altStr.includes('account') ||
-          ariaStr.includes('google account') ||
-          ariaStr.includes('profile photo');
+          altStr.includes('photo') ||
+          ariaStr.includes('profile') ||
+          ariaStr.includes('avatar') ||
+          ariaStr.includes('account');
 
         if (isAvatar) {
-          words.push({
-            text: '[PHOTO_AVATAR]',
-            isAvatar: true,
-            confidence: 99,
-            bbox: {
-              x: Math.round(rect.left),
-              y: Math.round(rect.top),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height)
-            }
-          });
+          const innerImg = tagName !== 'IMG' ? el.querySelector('img') : null;
+          const targetRect = innerImg ? innerImg.getBoundingClientRect() : rect;
+
+          if (targetRect.width >= 20 && targetRect.height >= 20) {
+            words.push({
+              text: '[PHOTO_AVATAR]',
+              isAvatar: true,
+              confidence: 99,
+              bbox: {
+                x: Math.round(targetRect.left),
+                y: Math.round(targetRect.top),
+                width: Math.round(targetRect.width),
+                height: Math.round(targetRect.height)
+              }
+            });
+          }
         }
       }
     }

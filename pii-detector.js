@@ -283,20 +283,59 @@
       }
     }
 
-    // Explicit Avatar & Face Photo Anonymization
+    // Explicit Avatar & Face Photo Anonymization with Overlap Merging
+    const avatarBoxes = [];
     for (let wIdx = 0; wIdx < indexedWords.length; wIdx++) {
       const w = indexedWords[wIdx];
       if ((w.isAvatar || w.text === '[PHOTO_AVATAR]') && !usedWordIndices.has(w.originalIdx)) {
         usedWordIndices.add(w.originalIdx);
-        matches.push({
-          type: 'AVATAR',
-          bbox: w.bbox,
-          confidence: 98.0,
-          matchedText: 'User Profile Photo',
-          wordIndices: [w.originalIdx],
-          isLowConfidence: false
+        avatarBoxes.push({
+          originalIdx: w.originalIdx,
+          bbox: { ...w.bbox }
         });
       }
+    }
+
+    // Merge overlapping or nested avatar boxes
+    const mergedAvatarGroups = [];
+    for (const ab of avatarBoxes) {
+      let merged = false;
+      for (const group of mergedAvatarGroups) {
+        const gBox = group.bbox;
+        const b = ab.bbox;
+        const xOverlap = Math.max(0, Math.min(gBox.x + gBox.width, b.x + b.width) - Math.max(gBox.x, b.x));
+        const yOverlap = Math.max(0, Math.min(gBox.y + gBox.height, b.y + b.height) - Math.max(gBox.y, b.y));
+        const overlapArea = xOverlap * yOverlap;
+        const minArea = Math.min(gBox.width * gBox.height, b.width * b.height);
+
+        if (overlapArea > 0 || (minArea > 0 && overlapArea / minArea > 0.15) || (Math.abs(gBox.x - b.x) < 40 && Math.abs(gBox.y - b.y) < 40)) {
+          const minX = Math.min(gBox.x, b.x);
+          const minY = Math.min(gBox.y, b.y);
+          const maxX = Math.max(gBox.x + gBox.width, b.x + b.width);
+          const maxY = Math.max(gBox.y + gBox.height, b.y + b.height);
+          group.bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+          group.indices.push(ab.originalIdx);
+          merged = true;
+          break;
+        }
+      }
+      if (!merged) {
+        mergedAvatarGroups.push({
+          bbox: { ...ab.bbox },
+          indices: [ab.originalIdx]
+        });
+      }
+    }
+
+    for (const group of mergedAvatarGroups) {
+      matches.push({
+        type: 'AVATAR',
+        bbox: group.bbox,
+        confidence: 98.0,
+        matchedText: 'User Profile Photo',
+        wordIndices: group.indices,
+        isLowConfidence: false
+      });
     }
 
     matches.sort((a, b) => {
