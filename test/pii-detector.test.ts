@@ -498,6 +498,148 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(match.bbox.x).toBe(183);
     expect(match.bbox.width).toBe(144);
   });
+
+  describe('Confidence-Aware Handling for Luhn Cards vs other PII', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    it('accepts Luhn-valid card with 25% OCR confidence without flagging lowConfidence or blocking', () => {
+      // 4532 0150 1234 5671 is Luhn-valid (ends in 1)
+      const words = [
+        { text: '4532', confidence: 25, bbox: { x: 100, y: 100, width: 40, height: 20 } },
+        { text: '0150', confidence: 25, bbox: { x: 145, y: 100, width: 40, height: 20 } },
+        { text: '1234', confidence: 25, bbox: { x: 190, y: 100, width: 40, height: 20 } },
+        { text: '5671', confidence: 25, bbox: { x: 235, y: 100, width: 40, height: 20 } }
+      ];
+
+      const result = PIIDetector.detectPII(words);
+      const cardMatch = result.matches.find((m: any) => m.type === 'CARD');
+      expect(cardMatch).toBeDefined();
+      expect(cardMatch.isLowConfidence).toBe(false);
+      expect(cardMatch.isLuhnValid).toBe(true);
+      expect(result.summary.lowConfidenceCount).toBe(0);
+      expect(result.isBlocked).toBe(false);
+    });
+
+    it('flags non-card PII (EMAIL, PHONE, OTP) at 25% confidence as lowConfidence and BLOCKED', () => {
+      const emailWords = [
+        { text: 'sarah.connor@cyberdyne.io', confidence: 25, bbox: { x: 50, y: 50, width: 180, height: 20 } }
+      ];
+      const emailResult = PIIDetector.detectPII(emailWords);
+      expect(emailResult.matches.length).toBe(1);
+      expect(emailResult.matches[0].isLowConfidence).toBe(true);
+      expect(emailResult.isBlocked).toBe(true);
+
+      const phoneWords = [
+        { text: '+91', confidence: 25, bbox: { x: 50, y: 100, width: 30, height: 20 } },
+        { text: '9876543210', confidence: 25, bbox: { x: 85, y: 100, width: 80, height: 20 } }
+      ];
+      const phoneResult = PIIDetector.detectPII(phoneWords);
+      expect(phoneResult.matches.length).toBe(1);
+      expect(phoneResult.matches[0].isLowConfidence).toBe(true);
+      expect(phoneResult.isBlocked).toBe(true);
+
+      const otpWords = [
+        { text: 'OTP:', confidence: 95, bbox: { x: 50, y: 150, width: 35, height: 20 } },
+        { text: '894210', confidence: 25, bbox: { x: 90, y: 150, width: 50, height: 20 } }
+      ];
+      const otpResult = PIIDetector.detectPII(otpWords);
+      const otpMatch = otpResult.matches.find((m: any) => m.type === 'OTP');
+      expect(otpMatch).toBeDefined();
+      expect(otpMatch.isLowConfidence).toBe(true);
+      expect(otpResult.isBlocked).toBe(true);
+    });
+
+    it('flags invalid-checksum card at 25% confidence as lowConfidence and BLOCKED', () => {
+      // 4532 0150 1234 5675 has invalid Luhn checksum (ends in 5 instead of 1)
+      const words = [
+        { text: '4532', confidence: 25, bbox: { x: 100, y: 100, width: 40, height: 20 } },
+        { text: '0150', confidence: 25, bbox: { x: 145, y: 100, width: 40, height: 20 } },
+        { text: '1234', confidence: 25, bbox: { x: 190, y: 100, width: 40, height: 20 } },
+        { text: '5675', confidence: 25, bbox: { x: 235, y: 100, width: 40, height: 20 } }
+      ];
+
+      const result = PIIDetector.detectPII(words);
+      const cardMatch = result.matches.find((m: any) => m.type === 'CARD');
+      expect(cardMatch).toBeDefined();
+      expect(cardMatch.isLowConfidence).toBe(true);
+      expect(result.isBlocked).toBe(true);
+    });
+
+    it('flags Luhn-valid card below 20.0% threshold (e.g. 15%) as lowConfidence', () => {
+      const words = [
+        { text: '4532', confidence: 15, bbox: { x: 100, y: 100, width: 40, height: 20 } },
+        { text: '0150', confidence: 15, bbox: { x: 145, y: 100, width: 40, height: 20 } },
+        { text: '1234', confidence: 15, bbox: { x: 190, y: 100, width: 40, height: 20 } },
+        { text: '5671', confidence: 15, bbox: { x: 235, y: 100, width: 40, height: 20 } }
+      ];
+
+      const result = PIIDetector.detectPII(words);
+      const cardMatch = result.matches.find((m: any) => m.type === 'CARD');
+      expect(cardMatch).toBeDefined();
+      expect(cardMatch.isLowConfidence).toBe(true);
+      expect(result.isBlocked).toBe(true);
+    });
+  });
+
+  describe('Cross-Validation Safety Check ("Position Uncertain")', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    it('triggers position uncertain when DOM match and OCR match reference similar text but dx > 40px', () => {
+      const domMatches = [
+        { type: 'CARD', matchedText: '4532 0150 1234 5671', bbox: { x: 100, y: 200, width: 200, height: 30 } }
+      ];
+      const ocrMatches = [
+        { type: 'CARD', matchedText: '4532 0150 1234 5671', bbox: { x: 160, y: 200, width: 200, height: 30 } }
+      ];
+
+      const cv = PIIDetector.crossValidatePositions(domMatches, ocrMatches, { maxDistance: 40 });
+      expect(cv.isPositionUncertain).toBe(true);
+      expect(cv.uncertainPairs.length).toBe(1);
+      expect(cv.uncertainPairs[0].dx).toBe(60);
+      expect(cv.reason).toBe('Sensitive match found but position could not be confirmed — review manually.');
+    });
+
+    it('triggers position uncertain when dy > 40px', () => {
+      const domMatches = [
+        { type: 'EMAIL', matchedText: 'sarah.connor@cyberdyne.io', bbox: { x: 100, y: 200, width: 180, height: 25 } }
+      ];
+      const ocrMatches = [
+        { type: 'EMAIL', matchedText: 'sarah.connor@cyberdyne.io', bbox: { x: 100, y: 260, width: 180, height: 25 } }
+      ];
+
+      const cv = PIIDetector.crossValidatePositions(domMatches, ocrMatches, { maxDistance: 40 });
+      expect(cv.isPositionUncertain).toBe(true);
+      expect(cv.uncertainPairs[0].dy).toBe(60);
+    });
+
+    it('does NOT trigger position uncertain when coordinates agree within 40px tolerance', () => {
+      const domMatches = [
+        { type: 'CARD', matchedText: '4532 0150 1234 5671', bbox: { x: 100, y: 200, width: 200, height: 30 } }
+      ];
+      const ocrMatches = [
+        { type: 'CARD', matchedText: '4532 0150 1234 5671', bbox: { x: 115, y: 210, width: 195, height: 28 } }
+      ];
+
+      const cv = PIIDetector.crossValidatePositions(domMatches, ocrMatches, { maxDistance: 40 });
+      expect(cv.isPositionUncertain).toBe(false);
+      expect(cv.uncertainPairs.length).toBe(0);
+      expect(cv.reason).toBe('');
+    });
+
+    it('does NOT trigger position uncertain for completely different text items', () => {
+      const domMatches = [
+        { type: 'CARD', matchedText: '4532 0150 1234 5671', bbox: { x: 100, y: 200, width: 200, height: 30 } }
+      ];
+      const ocrMatches = [
+        { type: 'CARD', matchedText: '5425 2334 3010 9879', bbox: { x: 500, y: 600, width: 200, height: 30 } }
+      ];
+
+      const cv = PIIDetector.crossValidatePositions(domMatches, ocrMatches, { maxDistance: 40 });
+      expect(cv.isPositionUncertain).toBe(false);
+    });
+  });
 });
 
 

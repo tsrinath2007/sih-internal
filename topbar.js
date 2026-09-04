@@ -1,5 +1,9 @@
 // Parallax Top Bar Controller - High-Resolution Visual Perception & Redaction Engine
 
+// Debug Overlay Mode Toggle (defaults to false)
+// When true, draws DOM-sourced boxes in blue (#3b82f6) and OCR-sourced boxes in yellow (#eab308)
+window.PARALLAX_DEBUG = typeof window.PARALLAX_DEBUG !== 'undefined' ? window.PARALLAX_DEBUG : false;
+
 document.addEventListener('DOMContentLoaded', async () => {
   let isScanning = false;
   let currentScanData = null;
@@ -267,7 +271,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     setStatus('Capturing Viewport...', 'capturing');
 
     try {
-      // 1. Request DOM words in parallel
+      // Hide iframe cleanly so it is NEVER captured in the screenshot
+      window.parent.postMessage({ type: 'PARALLAX_PREPARE_CAPTURE' }, '*');
+      await new Promise((r) => setTimeout(r, 90));
+
+      // --- ATOMIC CAPTURE & DOM VIEWPORT MEASUREMENT ---
+      // To prevent layout, zoom, or scroll drift between the DOM coordinate space and the
+      // screenshot pixel coordinate space, we capture the DOM snapshot (including
+      // viewportWidth and viewportHeight) in the exact same tick / execution window as
+      // chrome.tabs.captureVisibleTab(), before heavy async OCR processing begins.
+      //
+      // Previously, domWordsPromise was fired before hiding the iframe, followed by a 90ms delay,
+      // followed by capture, and then awaited AFTER heavy async OCR processing (500ms-2000ms later).
+      // Any DOM reflow, scroll, or resize during that window resulted in misaligned scaleX/scaleY.
+      //
+      // With Promise.all here:
+      // 1. Both the DOM reader and captureVisibleTab sample the exact same live viewport state.
+      // 2. The host iframe is restored immediately once the visual snapshot and metrics are locked.
+      // 3. Downscale and OCR run asynchronously afterward without affecting spatial alignment.
       const domWordsPromise = new Promise((resolve) => {
         const handler = (event) => {
           if (event.data && event.data.type === 'PARALLAX_DOM_WORDS_RESPONSE') {
@@ -277,14 +298,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
         window.addEventListener('message', handler);
         window.parent.postMessage({ type: 'PARALLAX_REQUEST_DOM_WORDS' }, '*');
-        setTimeout(() => resolve({ words: [], viewportWidth: 1280, viewportHeight: 800 }), 250);
+        setTimeout(() => resolve({ words: [], viewportWidth: window.innerWidth || 1280, viewportHeight: window.innerHeight || 800 }), 400);
       });
 
-      // Hide iframe cleanly so it is NEVER captured in the screenshot
-      window.parent.postMessage({ type: 'PARALLAX_PREPARE_CAPTURE' }, '*');
-      await new Promise((r) => setTimeout(r, 90));
-
-      const captureResponse = await new Promise((resolve) => {
+      const capturePromise = new Promise((resolve) => {
         chrome.runtime.sendMessage({ action: 'SCAN_REQUEST' }, (res) => {
           if (chrome.runtime.lastError) {
             resolve({ success: false, error: chrome.runtime.lastError.message });
@@ -294,7 +311,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       });
 
-      // Restore iframe
+      const [domData, captureResponse] = await Promise.all([domWordsPromise, capturePromise]);
+
+      // Restore iframe immediately after capture and DOM measurement are locked in
       window.parent.postMessage({ type: 'PARALLAX_RESTORE_CAPTURE' }, '*');
 
       if (!captureResponse.success || !captureResponse.dataUrl) {
@@ -345,6 +364,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return {
           text: word.text ? word.text.trim() : '',
           confidence: typeof word.confidence === 'number' ? word.confidence : 90,
+          source: 'OCR',
           bbox: { x: Math.round(x0), y: Math.round(y0), width: Math.round(x1 - x0), height: Math.round(y1 - y0) }
         };
       }).filter((w) => w.text.length > 0);
@@ -357,8 +377,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const width = img.naturalWidth;
             const height = img.naturalHeight;
 
-            // Resolve DOM words and scale to canvas resolution
-            const domData = await domWordsPromise;
+            // Use locked domData captured atomically with screenshot
             const domWords = domData.words || [];
             const viewW = domData.viewportWidth || (window.innerWidth || 1280);
             const viewH = domData.viewportHeight || (window.innerHeight || 800);
@@ -371,6 +390,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               isPassword: w.isPassword,
               isSecret: w.isSecret,
               confidence: w.confidence || 99,
+              source: 'DOM',
               bbox: {
                 x: Math.round(w.bbox.x * scaleX),
                 y: Math.round(w.bbox.y * scaleY),
@@ -378,6 +398,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 height: Math.round(w.bbox.height * scaleY)
               }
             }));
+
+            // Run independent detections for Cross-Validation Safety Check
+            const domPiiResult = PIIDetector.detectPII(scaledDomWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
+            const ocrPiiResult = PIIDetector.detectPII(extractedWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
 
             // High-Precision Word Fusion: DOM Words + OCR Words
             const mergedWords = [...scaledDomWords];
@@ -394,8 +418,36 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             }
 
-            // Run Strict Core PII Detector (EMAIL, PHONE, CARD, OTP, AADHAAR, PAN, IFSC, DOB, AVATAR)
-            const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
+            // Run Strict Core PII Detector on merged words (EMAIL, PHONE, CARD, OTP, AADHAAR, PAN, IFSC, DOB, AVATAR)
+            const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
+
+            // --- CROSS-VALIDATION SAFETY CHECK ("POSITION UNCERTAIN") ---
+            // If a DOM match and an OCR match reference similar text content but their
+            // bounding boxes are > 40px apart on either axis, this indicates coordinate misalignment
+            // between the live DOM and the captured pixels (e.g. dynamic layout shift, scroll drift,
+            // or offscreen CSS transforms). Rather than guessing which position is correct (which
+            // could leave real PII unredacted and exposed), mark overall page status as BLOCKED,
+            // surface "Sensitive match found but position could not be confirmed — review manually."
+            // in the HUD, and retain both candidate bounding boxes with zero silent drops.
+            const crossValidation = (typeof PIIDetector.crossValidatePositions === 'function')
+              ? PIIDetector.crossValidatePositions(domPiiResult.matches, ocrPiiResult.matches, { maxDistance: 40 })
+              : { isPositionUncertain: false, uncertainPairs: [] };
+
+            const isPositionUncertain = crossValidation.isPositionUncertain;
+
+            if (isPositionUncertain) {
+              piiDetection.isBlocked = true;
+              piiDetection.status = 'BLOCKED — Sensitive match found but position could not be confirmed — review manually.';
+
+              // Retain both candidate bounding boxes from DOM and OCR so zero sensitive data is silently dropped
+              for (const pair of crossValidation.uncertainPairs) {
+                const hasDom = piiDetection.matches.some(m => Math.abs(m.bbox.x - pair.domMatch.bbox.x) < 10 && Math.abs(m.bbox.y - pair.domMatch.bbox.y) < 10);
+                if (!hasDom) piiDetection.matches.push({ ...pair.domMatch, isPositionUncertain: true });
+
+                const hasOcr = piiDetection.matches.some(m => Math.abs(m.bbox.x - pair.ocrMatch.bbox.x) < 10 && Math.abs(m.bbox.y - pair.ocrMatch.bbox.y) < 10);
+                if (!hasOcr) piiDetection.matches.push({ ...pair.ocrMatch, isPositionUncertain: true });
+              }
+            }
 
             // Detect any visual face portraits in document/screenshot image (e.g. Aadhaar cards, ID badges)
             if (typeof PIIDetector.detectVisualFaces === 'function') {
@@ -434,15 +486,36 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
               }
 
-              // Step 1A: Subtle low-opacity gray outline for non-PII text
-              ctx.lineWidth = 1;
-              ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
-              ctx.fillStyle = 'rgba(148, 163, 184, 0.04)';
-              for (let i = 0; i < mergedWords.length; i++) {
-                if (!piiWordIndexSet.has(i)) {
-                  const { x, y, width: bw, height: bh } = mergedWords[i].bbox;
+              // --- DEBUG OVERLAY MODE ---
+              // When window.PARALLAX_DEBUG is true, draw all detected word bounding boxes color-coded:
+              // - DOM-sourced words in blue (#3b82f6)
+              // - OCR-sourced words in yellow (#eab308)
+              if (window.PARALLAX_DEBUG) {
+                for (const w of mergedWords) {
+                  const { x, y, width: bw, height: bh } = w.bbox;
+                  const isDom = w.source === 'DOM';
+                  ctx.lineWidth = 1.5;
+                  ctx.strokeStyle = isDom ? '#3b82f6' : '#eab308';
+                  ctx.fillStyle = isDom ? 'rgba(59, 130, 246, 0.15)' : 'rgba(234, 179, 8, 0.15)';
                   ctx.strokeRect(x, y, bw, bh);
                   ctx.fillRect(x, y, bw, bh);
+
+                  // Micro source badge
+                  ctx.font = 'bold 9px "JetBrains Mono", monospace';
+                  ctx.fillStyle = isDom ? '#3b82f6' : '#eab308';
+                  ctx.fillText(isDom ? 'DOM' : 'OCR', x + 2, Math.max(9, y - 2));
+                }
+              } else {
+                // Step 1A: Subtle low-opacity gray outline for non-PII text
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+                ctx.fillStyle = 'rgba(148, 163, 184, 0.04)';
+                for (let i = 0; i < mergedWords.length; i++) {
+                  if (!piiWordIndexSet.has(i)) {
+                    const { x, y, width: bw, height: bh } = mergedWords[i].bbox;
+                    ctx.strokeRect(x, y, bw, bh);
+                    ctx.fillRect(x, y, bw, bh);
+                  }
                 }
               }
 
@@ -596,6 +669,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Render Glass Chips
             let chipsHtml = '';
+            if (isPositionUncertain) {
+              chipsHtml += `
+                <div class="ptb-pii-chip" style="border-color: #f43f5e; background: rgba(244, 63, 94, 0.18);">
+                  <div class="ptb-chip-left">
+                    <span class="ptb-chip-tag" style="background: #f43f5e; color: #fff;">POSITION UNCERTAIN</span>
+                    <span class="ptb-chip-text" style="color: #fca5a5;">Review manually: spatial discrepancy between DOM and OCR coordinates</span>
+                  </div>
+                  <span class="ptb-chip-conf conf-low">⚠️ BLOCKED</span>
+                </div>
+              `;
+            }
             for (const m of piiDetection.matches) {
               const masked = maskPreview(m.matchedText, m.type);
               const confClass = m.isLowConfidence ? 'conf-low' : 'conf-high';
@@ -612,7 +696,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (chipsList) chipsList.innerHTML = chipsHtml;
 
             const matchCount = piiDetection.matches.length;
-            setStatus(`Redaction Complete • ${matchCount} Protected`, 'ready');
+            if (isPositionUncertain) {
+              setStatus('Sensitive match found but position could not be confirmed — review manually.', 'blocked');
+            } else if (piiDetection.isBlocked) {
+              setStatus(piiDetection.status, 'blocked');
+            } else {
+              setStatus(`Redaction Complete • ${matchCount} Protected`, 'ready');
+            }
 
             // Log to IndexedDB (STRICT METADATA ONLY)
             try {
@@ -627,7 +717,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 redactedCount: piiDetection.matches.length,
                 blocked: piiDetection.isBlocked,
                 actionType: 'ON_DEVICE_REDACT',
-                actionApproved: true
+                actionApproved: !piiDetection.isBlocked
               });
               await renderMetricsAndLogs();
             } catch (logErr) {

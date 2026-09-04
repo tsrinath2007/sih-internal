@@ -221,6 +221,7 @@
    */
   function detectPII(words, options = {}) {
     const confidenceThreshold = options.confidenceThreshold != null ? options.confidenceThreshold : 35.0;
+    const cardLuhnConfidenceThreshold = options.cardLuhnConfidenceThreshold != null ? options.cardLuhnConfidenceThreshold : 20.0;
     const matches = [];
     const usedWordIndices = new Set();
 
@@ -554,7 +555,16 @@
             const finalIndices = trimmedSlice.map(w => w.originalIdx);
             const mergedBbox = computeMergedBbox(trimmedSlice.map(w => w.bbox));
             const avgConfidence = trimmedSlice.reduce((s, w) => s + (w.confidence || 0), 0) / trimmedSlice.length;
-            const isLowConfidence = avgConfidence < confidenceThreshold;
+
+            // Confidence-Aware Handling for Luhn Cards:
+            // Slices that match CARD and pass the Luhn algorithm checksum are verified payment cards.
+            // These can reliably use a relaxed confidence threshold (e.g. 20.0 instead of default 35.0)
+            // to prevent silent drops on embossed/metallic cards with challenging OCR contrasts.
+            // Do NOT lower thresholds for EMAIL, PHONE, or OTP.
+            const sliceDigits = trimmedSlice.map(w => w.text).join('').replace(/\D/g, '');
+            const isLuhnValidCard = matchType === 'CARD' && sliceDigits.length >= 13 && sliceDigits.length <= 19 && luhnCheck(sliceDigits);
+            const effectiveThreshold = isLuhnValidCard ? cardLuhnConfidenceThreshold : confidenceThreshold;
+            const isLowConfidence = avgConfidence < effectiveThreshold;
 
             matches.push({
               type: matchType,
@@ -562,7 +572,8 @@
               confidence: Number(avgConfidence.toFixed(1)),
               matchedText: trimmedSlice.map(w => w.text).join(' '),
               wordIndices: finalIndices,
-              isLowConfidence: isLowConfidence
+              isLowConfidence: isLowConfidence,
+              ...(isLuhnValidCard ? { isLuhnValid: true } : {})
             });
 
             for (const idx of finalIndices) {
@@ -1081,6 +1092,63 @@
     }
   }
 
+  /**
+   * Cross-Validation Safety Check ("Position Uncertain"):
+   * Compares DOM-sourced PII matches against OCR-sourced PII matches.
+   * If a DOM match and an OCR match reference similar text content but their
+   * bounding boxes are > 40px apart on either axis, flags position uncertainty.
+   * This prevents misaligned coordinate fusions from guessing and leaking real PII.
+   */
+  function crossValidatePositions(domMatches, ocrMatches, options = {}) {
+    const maxDistance = options.maxDistance != null ? options.maxDistance : 40;
+    const uncertainPairs = [];
+
+    if (!Array.isArray(domMatches) || !Array.isArray(ocrMatches)) {
+      return { isPositionUncertain: false, uncertainPairs: [], reason: '' };
+    }
+
+    for (const dm of domMatches) {
+      if (!dm || !dm.bbox) continue;
+      const dmDigits = (dm.matchedText || '').replace(/\D/g, '');
+      const dmClean = (dm.matchedText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      for (const om of ocrMatches) {
+        if (!om || !om.bbox) continue;
+        const omDigits = (om.matchedText || '').replace(/\D/g, '');
+        const omClean = (om.matchedText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        // Check if both matches reference similar sensitive content
+        const digitsMatch = dmDigits.length >= 6 && omDigits.length >= 6 && (dmDigits === omDigits || dmDigits.includes(omDigits) || omDigits.includes(dmDigits));
+        const textMatch = dmClean.length >= 5 && omClean.length >= 5 && (dmClean === omClean || dmClean.includes(omClean) || omClean.includes(dmClean));
+
+        if (digitsMatch || textMatch) {
+          const dx = Math.abs(dm.bbox.x - om.bbox.x);
+          const dy = Math.abs(dm.bbox.y - om.bbox.y);
+
+          if (dx > maxDistance || dy > maxDistance) {
+            uncertainPairs.push({
+              domMatch: dm,
+              ocrMatch: om,
+              dx,
+              dy
+            });
+          }
+        }
+      }
+    }
+
+    const isPositionUncertain = uncertainPairs.length > 0;
+    const reason = isPositionUncertain
+      ? 'Sensitive match found but position could not be confirmed — review manually.'
+      : '';
+
+    return {
+      isPositionUncertain,
+      uncertainPairs,
+      reason
+    };
+  }
+
   return {
     detectPII,
     detectVisualFaces,
@@ -1089,6 +1157,7 @@
     unwrapUnicodeSmallText,
     normalizeOcrCardDigits,
     validateAadhaar,
-    luhnCheck
+    luhnCheck,
+    crossValidatePositions
   };
 }));
