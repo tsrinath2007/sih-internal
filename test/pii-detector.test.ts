@@ -447,6 +447,37 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(match.bbox.x).toBe(127);
     expect(match.bbox.width).toBe(342);
   });
+
+  it('detects all 16-digit card numbers with various prefixes (0, 1, 7, 8, 9) in spreadsheet data', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const sheetCardNumbers = [
+      '8469788093208196',
+      '0457178472671475',
+      '8193319084520599',
+      '1622948662836016',
+      '7517799229836957',
+      '0737028382226468',
+      '8983194893949482',
+      '8549145244106460',
+      '1280845850037038',
+      '7787943262705860',
+      '8452630976582802',
+      '5996775003145037',
+      '9876543210126456'
+    ];
+
+    const words = sheetCardNumbers.map((num, idx) => ({
+      text: num,
+      confidence: 95,
+      bbox: { x: 100, y: 50 + idx * 30, width: 150, height: 20 }
+    }));
+
+    const result = PIIDetector.detectPII(words);
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBe(sheetCardNumbers.length);
+  });
 });
 
 

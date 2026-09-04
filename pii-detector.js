@@ -394,12 +394,12 @@
           else if (
             !/^(account|acc|wire|phone|tel|ifsc|pan|dob|aadhaar|aadhar)/i.test(prevWord1) &&
             (
-              // 1. Validated Luhn Check on Pure Digits (Real Cards: 13-19 digits)
-              (digits.length >= 13 && digits.length <= 19 && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35|50|58|60|63)/.test(digits) && luhnCheck(digits)) ||
-              // 2. Standard 16-Digit Card in 4x4 blocks or standard prefix (2-6)
-              (digits.length === 16 && /^[2-6]/.test(digits) && /^(\d{4}[\s\-]?){4}$/.test(cleanText.replace(/[^0-9\s\-]/g, ''))) ||
-              // 3. Standard 15-Digit Amex (34/37)
-              (digits.length === 15 && /^3[47]/.test(digits) && /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText.replace(/[^0-9\s\-]/g, ''))) ||
+              // 1. Any Standard 16-Digit Card Number (continuous or 4x4 blocks, all prefixes 0-9)
+              (digits.length === 16 && (cleanNone.length === 16 || /^(\d{4}[\s\-]?){4}$/.test(cleanText.replace(/[^0-9\s\-]/g, '')))) ||
+              // 2. Standard 15-Digit Amex (34/37) or 15-digit card
+              (digits.length === 15 && (/^3[47]/.test(digits) || luhnCheck(digits) || hasDocumentCardContext)) ||
+              // 3. Validated Luhn Check on Pure Digits (Real Cards: 13-19 digits)
+              (digits.length >= 13 && digits.length <= 19 && (luhnCheck(digits) || hasDocumentCardContext)) ||
               // 4. Formatted 4-Block Embossed Card (e.g. 5476 7678 9876 5432, S476 7E78 9875 5432, SH7h PERE 9676 5432)
               (
                 rawSlice.length === 4 &&
@@ -425,7 +425,7 @@
                 computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
               ) ||
               // 6. Standard Card Format regex with pure digits
-              (/^(\d{4}[\s\-]?){3}\d{4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
+              (/^(\d{4}[\s\-]?){3}\d{4}$/.test(cleanText)) ||
               (/^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText))
             )
           ) {
@@ -536,7 +536,7 @@
                 return dist <= 120 || (isSameRow && dist <= 160);
               });
 
-              if (isNearTrigger || (cleanText.length === 6 && digits.length === 6 && !/^(19|20)\d\d/.test(digits))) {
+              if (isNearTrigger || (cleanText.length === 6 && digits.length === 6)) {
                 matchType = 'OTP';
                 matchedText = cleanText;
               }
