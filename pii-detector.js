@@ -119,6 +119,7 @@
       .replace(/[Zz]/g, '2')
       .replace(/[Gg]/g, '6')
       .replace(/[Tt]/g, '7')
+      .replace(/[Ee]/g, '6')
       .replace(/\D/g, '');
   }
 
@@ -388,41 +389,36 @@
             matchType = 'IFSC';
             matchedText = cleanNone.toUpperCase();
           }
-          // 6. PAYMENT CARD (13-19 digits: Luhn validated OR 4x4 / 4-6-5 blocks OR 15-16 digits with card prefixes/context/mock cards/OCR repair)
+          // 6. PAYMENT CARD NUMBERS
           else if (
             !/^(account|acc|wire|phone|tel|ifsc|pan|dob)/i.test(prevWord1) &&
             (
-              (((digits.length >= 13 && digits.length <= 19) || (repairedDigits.length >= 13 && repairedDigits.length <= 19)) && (
-                luhnCheck(digits) ||
-                luhnCheck(repairedDigits) ||
-                (digits.length === 16 && (/^[2-6]/.test(digits) || /^(\d{4}[\s\-]?){4}$/.test(cleanText) || rawSlice.length === 4)) ||
-                (repairedDigits.length === 16 && (/^[2-6]/.test(repairedDigits) || rawSlice.length >= 3)) ||
-                (digits.length === 15 && (/^3[47]/.test(digits) || /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText))) ||
-                (repairedDigits.length === 15 && (/^[2-6]|3[47]/.test(repairedDigits) || hasDocumentCardContext)) ||
-                (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
-                hasDocumentCardContext ||
-                /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord1) ||
-                /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord2)
-              )) ||
-              // OCR-degraded card line in confirmed Card context (2-5 blocks on card line with span >= 120px)
-              (hasDocumentCardContext && rawSlice.length >= 2 && rawSlice.length <= 5 && (
-                repairedDigits.length >= 8 ||
-                (rawSlice.some(w => /\d{3,4}|[SsOo]\d{3}|\d{3}[SsOo]/.test(w.text)) && (computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 120))
-              ) && !/^(company|name|mastercard|barclaycard|business|valid|thru)/i.test(cleanText))
+              // 1. Validated Luhn Check (Real Cards)
+              luhnCheck(digits) || (repairedDigits.length >= 13 && repairedDigits.length <= 19 && luhnCheck(repairedDigits)) ||
+              // 2. Standard 16-Digit Card in 4x4 blocks or with standard prefix (2-6)
+              digits.length === 16 || (repairedDigits.length === 16 && /^[2-6]/.test(repairedDigits)) ||
+              // 3. Standard 15-Digit Amex (34/37)
+              digits.length === 15 || (repairedDigits.length === 15 && /^3[47]/.test(repairedDigits)) ||
+              // 4. Formatted 4-Block / 3-Block Card Group (e.g. 5476 7678 9876 5432, S476 7E78 9875 5432, S476 7789875 5432)
+              (
+                (rawSlice.length === 4 || rawSlice.length === 3) &&
+                rawSlice.every(w => /^[a-zA-Z0-9,\.]{3,8}$/.test(w.text)) &&
+                repairedDigits.length >= 13 &&
+                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 140
+              ) ||
+              // 5. Standard Card Format regex with card brand keyword nearby
+              (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
+              (/^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord1) && (digits.length >= 12 || repairedDigits.length >= 12)) ||
+              (/^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord2) && (digits.length >= 12 || repairedDigits.length >= 12))
             )
           ) {
             matchType = 'CARD';
             matchedText = joinedSpace;
           }
-          // 6b. CARD EXPIRY DATE (e.g. VALID THRU 01/18, 01/14, EXP 12/28, MM/YY, MM/YYYY, 01738;)
+          // 6b. CARD EXPIRY DATE (e.g. VALID THRU 01/18, 01/14, EXP 12/28, MM/YY, MM/YYYY)
           else if (
+            /^(0[1-9]|1[0-2])[\/\-](20\d{2}|\d{2})$/.test(cleanText) &&
             (
-              /^(0[1-9]|1[0-2])[\/\-](20\d{2}|\d{2})$/.test(cleanText) ||
-              (hasDocumentCardContext && /^(0[1-9]|1[0-2])[\/\-]?\d{2,4}[;\.,]?$/.test(cleanText)) ||
-              (hasDocumentCardContext && /^\d{2}[\/\-]\d{2}$/.test(cleanText))
-            ) &&
-            (
-              hasDocumentCardContext ||
               /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(prevWord1) ||
               /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(prevWord2) ||
               (line[i + winSize] && /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(unwrapUnicodeSmallText(line[i + winSize].text))) ||
@@ -447,17 +443,6 @@
               /^(cvv|cvc|cvv2|cvc2|cid|csc|security_code|security)[\s\:\-]*$/i.test(prevWord2) ||
               /^(cvv|cvc|cid|csc)[\s\:\-]+\d{3,4}$/i.test(cleanText)
             )
-          ) {
-            matchType = 'CARD';
-            matchedText = cleanText;
-          }
-          // 6e. CARDHOLDER NAME (e.g. "COMPANY NAME", "M STEPHENS", "JOHN DOE" in card context)
-          else if (
-            hasDocumentCardContext &&
-            (/^(company[\s]+name|cardholder|name[\s\:]+)/i.test(joinedSpace) ||
-             /^(company|name)/i.test(prevWord1) ||
-             /^(company|name)/i.test(prevWord2)) &&
-            /^[a-zA-Z\s\.\,\'\-]+$/.test(cleanText) && cleanText.length >= 3 && cleanText.length <= 40
           ) {
             matchType = 'CARD';
             matchedText = cleanText;
