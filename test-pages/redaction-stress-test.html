@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parallax Multi-Scale PII & Avatar Redaction Stress Test</title>
+  <style>
+    :root {
+      --bg-gradient: radial-gradient(circle at 50% 0%, #0d1527 0%, #050811 100%);
+      --card-bg: rgba(15, 23, 42, 0.75);
+      --card-border: rgba(51, 65, 85, 0.6);
+      --card-hover: rgba(30, 41, 59, 0.9);
+      --accent-cyan: #00f2fe;
+      --accent-purple: #c084fc;
+      --accent-rose: #f43f5e;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background: #030712;
+      background-image: var(--bg-gradient);
+      color: var(--text-main);
+      padding: 40px 24px 80px 24px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .wrapper {
+      max-width: 1080px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* Top Hero Header */
+    .hero-header {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.85) 100%);
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      border-radius: 16px;
+      padding: 28px 32px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(0, 242, 254, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00f2fe, #38bdf8, #818cf8, #c084fc);
+    }
+
+    .hero-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #00f2fe, #0284c7);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px rgba(0, 242, 254, 0.4);
+    }
+
+    .brand-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #ffffff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-tag {
+      background: rgba(0, 242, 254, 0.15);
+      color: #00f2fe;
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .hero-desc {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 820px;
+    }
+
+    /* Benchmark Stats Grid */
+    .benchmark-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .stat-pill {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-pill-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-pill-val {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .stat-pill-val .accent-c { color: var(--accent-cyan); }
+    .stat-pill-val .accent-p { color: var(--accent-purple); }
+    .stat-pill-val .accent-e { color: var(--accent-emerald); }
+
+    /* Section Cards */
+    .section-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+      padding-bottom: 12px;
+    }
+
+    .section-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-num {
+      width: 24px;
+      height: 24px;
+      background: rgba(0, 242, 254, 0.15);
+      color: #00f2fe;
+      border: 1px solid rgba(0, 242, 254, 0.4);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .section-badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+    }
+
+    .badge-micro { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-standard { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-giant { background: rgba(192, 132, 252, 0.15); color: #d8b4fe; border: 1px solid rgba(192, 132, 252, 0.3); }
+    .badge-avatar { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    /* Scale Row Items */
+    .scale-row {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .scale-row:hover {
+      border-color: rgba(0, 242, 254, 0.4);
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .scale-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+
+    .scale-size-tag {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 11px;
+      color: var(--accent-cyan);
+      font-weight: 700;
+      background: rgba(0, 242, 254, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .scale-desc {
+      font-size: 11.5px;
+      color: var(--text-dim);
+    }
+
+    .pii-payload-box {
+      background: #090e1a;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 12px;
+      color: #e2e8f0;
+      word-break: break-word;
+      line-height: 1.5;
+    }
+
+    /* Size Variations */
+    .size-6px  { font-size: 6.5px; line-height: 1.3; }
+    .size-8px  { font-size: 8px; line-height: 1.35; }
+    .size-9px  { font-size: 9px; line-height: 1.4; }
+    .size-10px { font-size: 10px; line-height: 1.45; }
+    .size-11px { font-size: 11px; line-height: 1.5; }
+    .size-12px { font-size: 12px; line-height: 1.5; }
+    .size-14px { font-size: 14px; line-height: 1.5; }
+    .size-18px { font-size: 18px; line-height: 1.4; font-weight: 600; }
+    .size-24px { font-size: 24px; line-height: 1.3; font-weight: 700; }
+    .size-36px { font-size: 36px; line-height: 1.2; font-weight: 800; }
+    .size-48px { font-size: 48px; line-height: 1.15; font-weight: 800; letter-spacing: -1px; }
+    .size-64px { font-size: 64px; line-height: 1.1; font-weight: 900; letter-spacing: -2px; }
+
+    /* Financial Table */
+    .table-container {
+      overflow-x: auto;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      text-align: left;
+    }
+
+    th {
+      background: #0f172a;
+      color: var(--accent-cyan);
+      padding: 10px 14px;
+      font-weight: 700;
+      border-bottom: 1px solid #334155;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #1e293b;
+      color: #cbd5e1;
+      background: rgba(15, 23, 42, 0.4);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(30, 41, 59, 0.6);
+    }
+
+    /* Avatar Showcase Grid */
+    .avatar-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 16px;
+    }
+
+    .avatar-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 10px;
+    }
+
+    .avatar-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .avatar-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .avatar-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .avatar-sub {
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+
+    /* Form Inputs Demo Grid */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-label {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .form-input {
+      background: #090e1a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: #f8fafc;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    /* Footer Guidance Note */
+    .footer-note {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+      padding-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wrapper">
+    
+    <!-- Hero Header -->
+    <header class="hero-header">
+      <div class="hero-top-row">
+        <div class="brand-group">
+          <div class="brand-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <circle cx="12" cy="11" r="3"></circle>
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title">Parallax Multi-Scale Stress Benchmark</h1>
+          </div>
+        </div>
+        <div class="brand-tag">Extreme Scale & Precision Test</div>
+      </div>
+
+      <p class="hero-desc">
+        This automated benchmark page rigorously stresses the on-device visual perception and spatial redaction pipeline across 
+        <strong>all scale dimensions (6.5px micro fine-print up to 64px giant display headlines)</strong>, multi-size avatar face portraits (24px to 140px), 
+        and all standard PII categories (Emails, International Phones, Luhn-valid Cards, OTPs, PAN, IFSC, and Bank Accounts).
+      </p>
+
+      <div class="benchmark-grid">
+        <div class="stat-pill">
+          <span class="stat-pill-label">Scale Coverage</span>
+          <span class="stat-pill-val"><span class="accent-c">6.5px</span> → <span class="accent-p">64px</span></span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-pill-label">Avatar Face Sizes</span>
+          <span class="stat-pill-val"><span class="accent-p">24px</span>, <span class="accent-p">40px</span>, <span class="accent-p">64px</span>, <span class="accent-p">140px</span></span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-pill-label">Entity Categories</span>
+          <span class="stat-pill-val"><span class="accent-e">8 PII Types + Faces</span></span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-pill-label">Execution Mode</span>
+          <span class="stat-pill-val"><span class="accent-c">100% Local On-Device</span></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Section 1: Micro Fine Print & Legal Disclaimers (6.5px - 10px) -->
+    <section class="section-card">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-num">1</span>
+          <h2 class="section-title">Ultra-Micro & Fine-Print PII (6.5px to 10px)</h2>
+        </div>
+        <span class="section-badge badge-micro">High-Density OCR Test</span>
+      </div>
+
+      <!-- 6.5px Ultra Micro -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">6.5px Ultra-Micro</span>
+          <span class="scale-desc">Regulatory micro-disclaimer & wire verification</span>
+        </div>
+        <div class="pii-payload-box size-6px">
+          CONFIDENTIAL WIRE TRANSFER AUTH: BENEFICIARY ACCOUNT NUMBER 981273641209 | ROUTING IFSC HDFC0001234 | 2FA AUTHORIZATION OTP: 894210 | EMERGENCY DIRECT LINE: +1-800-492-9102 | ENCRYPTION COMPLIANCE OFFICER: tiny.compliance@swiss-banking.ch
+        </div>
+      </div>
+
+      <!-- 8px Micro -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">8.0px Fine-Print</span>
+          <span class="scale-desc">Contract footer & statutory PAN / phone credentials</span>
+        </div>
+        <div class="pii-payload-box size-8px">
+          Statutory Identification: PAN CARD NUMBER ABCDE1234F | Direct Dial Mobile: +91 98765 43210 | Primary Contact: audit.secretariat@secure-financial.org | One-Time Verification Passcode: 493012
+        </div>
+      </div>
+
+      <!-- 9.5px Micro-Table Row -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">9.5px Compact Ledger</span>
+          <span class="scale-desc">Encrypted payment card receipt payload</span>
+        </div>
+        <div class="pii-payload-box size-9px">
+          CARD PAYMENT CLEARED: Visa 4532 0150 1234 5678 | Cardholder Email: sarah.connor@cyberdyne.io | Customer Service Hotline: +44 20 7946 0919 | Settlement Account: 102938475612
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: Avatar & Face Photo Multi-Scale Mosaic Matrix (24px to 140px) -->
+    <section class="section-card">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-num">2</span>
+          <h2 class="section-title">Face & Avatar Anonymization Matrix (24px to 140px)</h2>
+        </div>
+        <span class="section-badge badge-avatar">Cyber Mosaic Pixelation</span>
+      </div>
+
+      <div class="avatar-grid">
+        <!-- 24px Tiny Avatar -->
+        <div class="avatar-card">
+          <span class="scale-size-tag">24px Tiny</span>
+          <div class="avatar-wrapper">
+            <img class="avatar user-profile-pic" width="24" height="24" style="border-radius: 50%; border: 1.5px solid #00f2fe;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%230284c7'/><circle cx='12' cy='8' r='4' fill='%23fde047'/><path d='M4 20c0-4 4-6 8-6s8 2 8 6' fill='%23fde047'/></svg>" alt="User Avatar 24px">
+          </div>
+          <div class="avatar-meta">
+            <span class="avatar-name">Dr. Vance</span>
+            <span class="avatar-sub">24×24 Icon</span>
+          </div>
+        </div>
+
+        <!-- 40px Standard Avatar -->
+        <div class="avatar-card">
+          <span class="scale-size-tag">40px Standard</span>
+          <div class="avatar-wrapper">
+            <img class="avatar profile-photo" width="40" height="40" style="border-radius: 50%; border: 2px solid #38bdf8;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><circle cx='20' cy='20' r='20' fill='%237c3aed'/><circle cx='20' cy='14' r='7' fill='%23fed7aa'/><path d='M6 34c0-6.5 6.5-10 14-10s14 3.5 14 10' fill='%23fed7aa'/></svg>" alt="Profile Picture 40px">
+          </div>
+          <div class="avatar-meta">
+            <span class="avatar-name">Sarah Connor</span>
+            <span class="avatar-sub">40×40 Nav Pic</span>
+          </div>
+        </div>
+
+        <!-- 64px Medium Headshot -->
+        <div class="avatar-card">
+          <span class="scale-size-tag">64px Medium</span>
+          <div class="avatar-wrapper">
+            <img class="avatar headshot-image" width="64" height="64" style="border-radius: 12px; border: 2px solid #a855f7;" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230f766e'/><circle cx='32' cy='24' r='12' fill='%23ffedd5'/><path d='M10 56c0-11 10-16 22-16s22 5 22 16' fill='%23ffedd5'/></svg>" alt="Headshot Portrait 64px">
+          </div>
+          <div class="avatar-meta">
+            <span class="avatar-name">Marcus Brody</span>
+            <span class="avatar-sub">64×64 Card</span>
+          </div>
+        </div>
+
+        <!-- 140px Large Executive Portrait -->
+        <div class="avatar-card" style="grid-column: span 1;">
+          <span class="scale-size-tag">140px Executive</span>
+          <div class="avatar-wrapper">
+            <img class="avatar executive-portrait" width="140" height="140" style="border-radius: 16px; border: 2.5px solid #00f2fe; box-shadow: 0 0 15px rgba(0, 242, 254, 0.2);" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'><rect width='140' height='140' rx='16' fill='%231e1b4b'/><circle cx='70' cy='52' r='28' fill='%23fed7aa'/><circle cx='60' cy='48' r='3.5' fill='%231e293b'/><circle cx='80' cy='48' r='3.5' fill='%231e293b'/><path d='M64 62q6 4 12 0' stroke='%23ea580c' stroke-width='3' fill='none'/><path d='M22 124c0-24 22-36 48-36s48 12 48 36' fill='%23fed7aa'/></svg>" alt="Executive Face Portrait 140px">
+          </div>
+          <div class="avatar-meta">
+            <span class="avatar-name">Elena Rostova</span>
+            <span class="avatar-sub">140×140 High-Res</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Standard Dense Financial Grid (11px to 14px) -->
+    <section class="section-card">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-num">3</span>
+          <h2 class="section-title">Standard Financial Ledger & Form Inputs (11px to 14px)</h2>
+        </div>
+        <span class="section-badge badge-standard">Tabular & Form Inputs</span>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Email Address</th>
+              <th>Phone Number</th>
+              <th>Card / Account</th>
+              <th>2FA OTP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Alexander Vance</strong></td>
+              <td>alexander.vance@blackmesa.org</td>
+              <td>+1 (555) 891-2340</td>
+              <td>Mastercard 5425 2334 3010 9876</td>
+              <td><code>629104</code></td>
+            </tr>
+            <tr>
+              <td><strong>Priya Sharma</strong></td>
+              <td>priya.sharma@apex-fin.in</td>
+              <td>+91 91234 56789</td>
+              <td>Account 482019485720</td>
+              <td><code>817392</code></td>
+            </tr>
+            <tr>
+              <td><strong>Jean-Luc Picard</strong></td>
+              <td>jean.luc@starfleet-cmd.eu</td>
+              <td>+33 1 42 68 55 00</td>
+              <td>Amex 3782 822463 10005</td>
+              <td><code>502914</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Billing Notification Email</label>
+          <input type="text" class="form-input" value="john.doe@enterprise-solutions.com" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Emergency SMS Verification Number</label>
+          <input type="text" class="form-input" value="+1 (555) 789-0123" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Primary PAN Identity</label>
+          <input type="text" class="form-input" value="XYZPQ9876R" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Active Session OTP Code</label>
+          <input type="text" class="form-input" value="902841" readonly>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Giant Display & Banner PII (18px to 64px) -->
+    <section class="section-card">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-num">4</span>
+          <h2 class="section-title">Large & Giant Display Headlines (18px to 64px)</h2>
+        </div>
+        <span class="section-badge badge-giant">Macro Scale Perception</span>
+      </div>
+
+      <!-- 18px -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">18px Headline</span>
+          <span class="scale-desc">Billing summary header</span>
+        </div>
+        <div class="pii-payload-box size-18px">
+          Invoice Authorized To: victor.stone@titans-defense.net | Phone: +1-888-555-0199
+        </div>
+      </div>
+
+      <!-- 24px -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">24px Sub-Display</span>
+          <span class="scale-desc">Direct corporate executive hotlines</span>
+        </div>
+        <div class="pii-payload-box size-24px">
+          VIP Direct Desk: +91 99887 76655 | CEO: director.board@global-bank.com
+        </div>
+      </div>
+
+      <!-- 36px -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">36px Large Display</span>
+          <span class="scale-desc">High-priority alert banner</span>
+        </div>
+        <div class="pii-payload-box size-36px">
+          RECOVERY OTP: 739201 | CARD: 4532 0150 1234 5678
+        </div>
+      </div>
+
+      <!-- 48px -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">48px Giant Display</span>
+          <span class="scale-desc">Massive billboard identifier</span>
+        </div>
+        <div class="pii-payload-box size-48px">
+          ACCOUNT: 883920194821
+        </div>
+      </div>
+
+      <!-- 64px -->
+      <div class="scale-row">
+        <div class="scale-label-row">
+          <span class="scale-size-tag">64px Ultra-Giant Banner</span>
+          <span class="scale-desc">Hero display PII payload</span>
+        </div>
+        <div class="pii-payload-box size-64px">
+          +1 (555) 019-2834
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer Verification Instructions -->
+    <div class="footer-note">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      <span>Parallax On-Device Engine: Click <strong>"Scan & Redact Current Page"</strong> in the popup or Top Bar HUD to verify multi-scale blackouts and face mosaic pixelation.</span>
+    </div>
+
+  </div>
+
+</body>
+</html>
