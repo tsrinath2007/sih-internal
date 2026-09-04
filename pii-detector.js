@@ -791,6 +791,7 @@
 
     for (const match of matches) {
       if (match.type !== 'AVATAR') continue;
+      if (match.matchedText === 'User Face Photo' || match.isVisualFace) continue;
 
       const { x, y, width: bw, height: bh } = match.bbox;
       // If it's already a small circular/square avatar icon (<= 110px), keep the exact badge
@@ -835,13 +836,13 @@
             const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
             const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
-            // Universal Human Face Skin Criteria
+            // Robust Human Face Skin Criteria (Fitzpatrick I-VI, warm lighting, shadow tolerance)
             const isSkin = (
-              cb >= 80 && cb <= 126 &&
-              cr >= 133 && cr <= 174 &&
-              r > 70 && g > 40 && b > 25 &&
-              (r - g) >= 8 && (r - g) <= 75 &&
-              (r - b) >= 12
+              cb >= 85 && cb <= 127 &&
+              cr >= 138 && cr <= 178 &&
+              r > 55 && g > 35 && b > 20 &&
+              (r - g) >= 14 &&
+              (r - b) >= 16
             );
 
             if (isSkin) {
@@ -874,7 +875,7 @@
                 if (qy < minY) minY = qy;
                 if (qy > maxY) maxY = qy;
 
-                // 8-way neighbors with 2px stride bridge
+                // 8-way neighbors with 2px stride bridge across glasses and nostrils
                 const neighbors = [
                   [qx + 1, qy], [qx - 1, qy], [qx, qy + 1], [qx, qy - 1],
                   [qx + 2, qy], [qx - 2, qy], [qx, qy + 2], [qx, qy - 2]
@@ -894,8 +895,8 @@
               const ch = maxY - minY + 1;
               const ratio = ch / Math.max(1, cw);
 
-              // Valid human face clusters have natural proportions (ratio between 0.75 and 1.85)
-              if (count >= 25 && ratio >= 0.70 && ratio <= 1.95 && cw >= 12 && ch >= 14) {
+              // Valid human face clusters have natural proportions (ratio between 0.65 and 2.25)
+              if (count >= 25 && ratio >= 0.65 && ratio <= 2.25 && cw >= 12 && ch >= 14) {
                 clusters.push({ minX, maxX, minY, maxY, cw, ch, count, ratio });
               }
             }
@@ -911,9 +912,9 @@
           const best = clusters[0];
 
           // Expand tightly around the face to encompass hairline, forehead, glasses, and chin
-          const padX = Math.round(best.cw * 0.12);
-          const padYTop = Math.round(best.ch * 0.18); // Forehead / hair
-          const padYBottom = Math.round(best.ch * 0.10); // Chin
+          const padX = Math.round(best.cw * 0.15);
+          const padYTop = Math.round(best.ch * 0.22); // Forehead / hair
+          const padYBottom = Math.round(best.ch * 0.12); // Chin
 
           const relX = Math.max(0, best.minX - padX);
           const relY = Math.max(0, best.minY - padYTop);
@@ -948,10 +949,10 @@
   /**
    * Scans a full screenshot/document canvas to detect human face photos (e.g. in Aadhaar/Passports/ID cards/Badges)
    */
-  function detectVisualFaces(img, canvasW, canvasH) {
-    if (!img || typeof document === 'undefined') return [];
+  function detectVisualFaces(img, canvasW, canvasH, options = {}) {
+    if (!img) return [];
     try {
-      const maxDim = 360;
+      const maxDim = 480;
       let sampleW = canvasW;
       let sampleH = canvasH;
       if (sampleW > maxDim || sampleH > maxDim) {
@@ -966,14 +967,28 @@
       sampleW = Math.max(80, sampleW);
       sampleH = Math.max(80, sampleH);
 
-      const off = document.createElement('canvas');
-      off.width = sampleW;
-      off.height = sampleH;
-      const oCtx = off.getContext('2d', { willReadFrequently: true });
-      oCtx.drawImage(img, 0, 0, sampleW, sampleH);
+      let data;
+      if (options && options.imageData && options.imageData.data) {
+        data = options.imageData.data;
+        sampleW = options.imageData.width;
+        sampleH = options.imageData.height;
+      } else if (typeof document !== 'undefined') {
+        const off = document.createElement('canvas');
+        off.width = sampleW;
+        off.height = sampleH;
+        const oCtx = off.getContext('2d', { willReadFrequently: true });
+        oCtx.drawImage(img, 0, 0, sampleW, sampleH);
 
-      const imgData = oCtx.getImageData(0, 0, sampleW, sampleH);
-      const data = imgData.data;
+        const imgData = oCtx.getImageData(0, 0, sampleW, sampleH);
+        data = imgData.data;
+      } else if (img && typeof img.getContext === 'function') {
+        const oCtx = img.getContext('2d', { willReadFrequently: true });
+        const imgData = oCtx.getImageData(0, 0, canvasW, canvasH);
+        data = imgData.data;
+      } else {
+        return [];
+      }
+
       const skinMap = new Uint8Array(sampleW * sampleH);
 
       for (let sy = 0; sy < sampleH; sy++) {
@@ -987,11 +1002,11 @@
           const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
           const isSkin = (
-            cb >= 80 && cb <= 126 &&
-            cr >= 133 && cr <= 174 &&
-            r > 70 && g > 40 && b > 25 &&
-            (r - g) >= 8 && (r - g) <= 75 &&
-            (r - b) >= 12
+            cb >= 85 && cb <= 127 &&
+            cr >= 138 && cr <= 178 &&
+            r > 55 && g > 35 && b > 20 &&
+            (r - g) >= 14 &&
+            (r - b) >= 16
           );
 
           if (isSkin) {
@@ -1001,7 +1016,7 @@
       }
 
       const visited = new Uint8Array(sampleW * sampleH);
-      const clusters = [];
+      const rawClusters = [];
 
       for (let cy = 0; cy < sampleH; cy++) {
         for (let cx = 0; cx < sampleW; cx++) {
@@ -1023,16 +1038,16 @@
               if (qy < minY) minY = qy;
               if (qy > maxY) maxY = qy;
 
-              const neighbors = [
-                [qx + 1, qy], [qx - 1, qy], [qx, qy + 1], [qx, qy - 1],
-                [qx + 2, qy], [qx - 2, qy], [qx, qy + 2], [qx, qy - 2]
-              ];
-              for (const [nx, ny] of neighbors) {
-                if (nx >= 0 && nx < sampleW && ny >= 0 && ny < sampleH) {
-                  const nIdx = ny * sampleW + nx;
-                  if (skinMap[nIdx] && !visited[nIdx]) {
-                    visited[nIdx] = 1;
-                    queue.push(nx, ny);
+              for (let dy = -2; dy <= 2; dy++) {
+                for (let dx = -2; dx <= 2; dx++) {
+                  if (dx === 0 && dy === 0) continue;
+                  const nx = qx + dx, ny = qy + dy;
+                  if (nx >= 0 && nx < sampleW && ny >= 0 && ny < sampleH) {
+                    const nIdx = ny * sampleW + nx;
+                    if (skinMap[nIdx] && !visited[nIdx]) {
+                      visited[nIdx] = 1;
+                      queue.push(nx, ny);
+                    }
                   }
                 }
               }
@@ -1045,26 +1060,64 @@
             const density = count / Math.max(1, boxArea);
 
             if (
-              count >= 50 &&
-              ratio >= 0.80 && ratio <= 1.80 &&
-              cw >= 16 && ch >= 18 &&
-              cw <= sampleW * 0.35 && ch <= sampleH * 0.38 &&
-              density >= 0.32 && density <= 0.90
+              count >= 30 &&
+              cw >= 12 && ch >= 12 &&
+              ratio >= 0.20 && ratio <= 3.5 &&
+              cw <= sampleW * 0.85 && ch <= sampleH * 0.92 &&
+              density >= 0.15
             ) {
-              clusters.push({ minX, maxX, minY, maxY, cw, ch, count, ratio });
+              rawClusters.push({ minX, maxX, minY, maxY, cw, ch, count, ratio, density });
             }
           }
         }
       }
 
+      // Merge adjacent clusters (e.g. forehead & cheeks split by glasses or mustache)
+      const mergedClusters = [];
+      for (const c of rawClusters) {
+        let merged = false;
+        for (const mc of mergedClusters) {
+          const xOverlap = Math.max(0, Math.min(c.maxX, mc.maxX) - Math.max(c.minX, mc.minX));
+          const yOverlap = Math.max(0, Math.min(c.maxY, mc.maxY) - Math.max(c.minY, mc.minY));
+          const dx = Math.abs((c.minX + c.maxX) / 2 - (mc.minX + mc.maxX) / 2);
+          const dy = Math.abs((c.minY + c.maxY) / 2 - (mc.minY + mc.maxY) / 2);
+
+          if (
+            (xOverlap > 10 && dy < Math.max(c.ch, mc.ch) * 1.5) ||
+            (dx < Math.max(c.cw, mc.cw) * 0.8 && dy < Math.max(c.ch, mc.ch) * 1.5)
+          ) {
+            mc.minX = Math.min(mc.minX, c.minX);
+            mc.maxX = Math.max(mc.maxX, c.maxX);
+            mc.minY = Math.min(mc.minY, c.minY);
+            mc.maxY = Math.max(mc.maxY, c.maxY);
+            mc.cw = mc.maxX - mc.minX + 1;
+            mc.ch = mc.maxY - mc.minY + 1;
+            mc.count += c.count;
+            merged = true;
+            break;
+          }
+        }
+        if (!merged) mergedClusters.push({ ...c });
+      }
+
+      // Filter merged clusters to ensure true human face proportions
+      const validFaceClusters = mergedClusters.filter(f => {
+        const finalRatio = f.ch / Math.max(1, f.cw);
+        return (
+          f.count >= 40 &&
+          finalRatio >= 0.55 && finalRatio <= 2.25 &&
+          f.cw <= sampleW * 0.85 && f.ch <= sampleH * 0.92
+        );
+      });
+
       const scaleX = canvasW / sampleW;
       const scaleY = canvasH / sampleH;
       const faceMatches = [];
 
-      for (const best of clusters) {
-        const padX = Math.round(best.cw * 0.12);
-        const padYTop = Math.round(best.ch * 0.18);
-        const padYBottom = Math.round(best.ch * 0.10);
+      for (const best of validFaceClusters) {
+        const padX = Math.round(best.cw * 0.15);
+        const padYTop = Math.round(best.ch * 0.22);
+        const padYBottom = Math.round(best.ch * 0.12);
 
         const relX = Math.max(0, best.minX - padX);
         const relY = Math.max(0, best.minY - padYTop);
@@ -1082,7 +1135,8 @@
           confidence: 96.0,
           matchedText: 'User Face Photo',
           wordIndices: [],
-          isLowConfidence: false
+          isLowConfidence: false,
+          isVisualFace: true
         });
       }
 

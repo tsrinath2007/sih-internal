@@ -326,12 +326,18 @@ document.addEventListener('DOMContentLoaded', async () => {
           for (const vf of visualFaces) {
             const alreadyMatched = piiDetection.matches.some(m => {
               if (m.type !== 'AVATAR') return false;
-              const dx = Math.abs((m.bbox.x + m.bbox.width / 2) - (vf.bbox.x + vf.bbox.width / 2));
-              const dy = Math.abs((m.bbox.y + m.bbox.height / 2) - (vf.bbox.y + vf.bbox.height / 2));
-              return dx < 60 && dy < 60;
+              const xOverlap = Math.max(0, Math.min(m.bbox.x + m.bbox.width, vf.bbox.x + vf.bbox.width) - Math.max(m.bbox.x, vf.bbox.x));
+              const yOverlap = Math.max(0, Math.min(m.bbox.y + m.bbox.height, vf.bbox.y + vf.bbox.height) - Math.max(m.bbox.y, vf.bbox.y));
+              const overlapArea = xOverlap * yOverlap;
+              const minArea = Math.min(m.bbox.width * m.bbox.height, vf.bbox.width * vf.bbox.height);
+              return overlapArea > 0.4 * minArea;
             });
             if (!alreadyMatched) {
               piiDetection.matches.push(vf);
+              if (piiDetection.summary) {
+                piiDetection.summary.total = (piiDetection.summary.total || 0) + 1;
+                piiDetection.summary.AVATAR = (piiDetection.summary.AVATAR || 0) + 1;
+              }
             }
           }
         }

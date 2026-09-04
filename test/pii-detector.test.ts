@@ -150,6 +150,110 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(refined[0].bbox.height).toBeLessThan(450);
   });
 
+  it('detects large portrait human faces with glasses against beige walls using visual skin clustering', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const width = 400;
+    const height = 300;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    // 1. Fill entire canvas with neutral beige wall (R: 171, G: 160, B: 139)
+    for (let i = 0; i < width * height; i++) {
+      data[i * 4] = 171;
+      data[i * 4 + 1] = 160;
+      data[i * 4 + 2] = 139;
+      data[i * 4 + 3] = 255;
+    }
+
+    // 2. Add a large human face taking > 55% height (y: 50..220) and 40% width (x: 120..280)
+    // with rich human skin chrominance (R: 195, G: 138, B: 108)
+    for (let y = 50; y < 220; y++) {
+      for (let x = 120; x < 280; x++) {
+        const idx = (y * width + x) * 4;
+        // Simulate dark eyeglass frames dividing forehead and cheeks (y: 110..120)
+        if (y >= 110 && y <= 120) {
+          data[idx] = 25;
+          data[idx + 1] = 25;
+          data[idx + 2] = 25;
+        } else {
+          data[idx] = 195;
+          data[idx + 1] = 138;
+          data[idx + 2] = 108;
+        }
+        data[idx + 3] = 255;
+      }
+    }
+
+    const mockImg = { width, height };
+    const visualFaces = PIIDetector.detectVisualFaces(mockImg, width, height, {
+      imageData: { width, height, data }
+    });
+
+    expect(visualFaces.length).toBe(1);
+    expect(visualFaces[0].type).toBe('AVATAR');
+    expect(visualFaces[0].matchedText).toBe('User Face Photo');
+    expect(visualFaces[0].isVisualFace).toBe(true);
+
+    // Bounding box should span across the glasses and encompass both forehead and cheeks
+    expect(visualFaces[0].bbox.x).toBeLessThanOrEqual(120);
+    expect(visualFaces[0].bbox.y).toBeLessThanOrEqual(50);
+    expect(visualFaces[0].bbox.x + visualFaces[0].bbox.width).toBeGreaterThanOrEqual(280);
+    expect(visualFaces[0].bbox.y + visualFaces[0].bbox.height).toBeGreaterThanOrEqual(220);
+
+    // Should NOT expand to the full image dimensions (beige wall was excluded)
+    expect(visualFaces[0].bbox.width).toBeLessThan(width * 0.9);
+    expect(visualFaces[0].bbox.height).toBeLessThan(height * 0.9);
+
+    // refineFaceBoundingBoxes should preserve this visual face without shrinking it
+    const refined = PIIDetector.refineFaceBoundingBoxes(visualFaces, mockImg, width, height);
+    expect(refined[0].bbox).toEqual(visualFaces[0].bbox);
+  });
+
+  it('detects multiple faces and integrates cleanly with deduplication', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const width = 800;
+    const height = 300;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    // Left person face (x: 100..220, y: 50..200)
+    for (let y = 50; y < 200; y++) {
+      for (let x = 100; x < 220; x++) {
+        const idx = (y * width + x) * 4;
+        data[idx] = 195;
+        data[idx + 1] = 138;
+        data[idx + 2] = 108;
+        data[idx + 3] = 255;
+      }
+    }
+
+    // Right person face (x: 500..620, y: 50..200)
+    for (let y = 50; y < 200; y++) {
+      for (let x = 500; x < 620; x++) {
+        const idx = (y * width + x) * 4;
+        data[idx] = 185;
+        data[idx + 1] = 130;
+        data[idx + 2] = 100;
+        data[idx + 3] = 255;
+      }
+    }
+
+    const mockImg = { width, height };
+    const visualFaces = PIIDetector.detectVisualFaces(mockImg, width, height, {
+      imageData: { width, height, data }
+    });
+
+    expect(visualFaces.length).toBe(2);
+    expect(visualFaces.map((f: any) => f.type)).toEqual(['AVATAR', 'AVATAR']);
+
+    // Check that left face is near x=100 and right face is near x=500
+    const xs = visualFaces.map((f: any) => f.bbox.x).sort((a: number, b: number) => a - b);
+    expect(xs[0]).toBeLessThanOrEqual(100);
+    expect(xs[1]).toBeGreaterThanOrEqual(450);
+  });
+
   it('detects Unicode small-caps, superscript, and subscript obfuscated PII', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const PIIDetector = require('../pii-detector');
