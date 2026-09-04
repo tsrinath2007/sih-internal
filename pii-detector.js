@@ -65,13 +65,32 @@
    */
   function trimSlice(slice, type) {
     let result = [...slice];
-    if (type === 'CARD' || type === 'OTP') {
+    if (type === 'EMAIL') {
+      // Find the token that contains '@' or '©'
+      const atIdx = result.findIndex(w => /[@©]/.test(w.text));
+      if (atIdx !== -1) {
+        let start = atIdx;
+        // If the token starts with '@', include the preceding token if it's alphanumeric username
+        if (start > 0 && /^[@©]/.test(result[atIdx].text) && /^[a-zA-Z0-9._%+-]+$/.test(result[start - 1].text)) {
+          start--;
+        }
+        let end = atIdx;
+        // If the token ends with '@' or '.', include the next token if it's domain part
+        if (end < result.length - 1 && (/[@©]$/.test(result[end].text) || /\.$/.test(result[end].text)) && /^[a-zA-Z0-9.-]+$/.test(result[end + 1].text)) {
+          end++;
+        }
+        result = result.slice(start, end + 1);
+      } else {
+        result = result.filter(w => /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(w.text));
+      }
+    } else if (type === 'CARD') {
       while (result.length > 0 && !/\d/.test(result[0].text)) {
         result.shift();
       }
       while (result.length > 0 && !/\d/.test(result[result.length - 1].text)) {
         result.pop();
       }
+      result = result.filter(w => /[\d\-]/.test(w.text));
     } else if (type === 'PHONE') {
       while (result.length > 0 && !/[\d+]/.test(result[0].text)) {
         result.shift();
@@ -79,13 +98,9 @@
       while (result.length > 0 && !/\d/.test(result[result.length - 1].text)) {
         result.pop();
       }
-    } else if (type === 'EMAIL') {
-      while (result.length > 0 && !/[a-zA-Z0-9@.]/.test(result[0].text)) {
-        result.shift();
-      }
-      while (result.length > 0 && !/[a-zA-Z0-9]/.test(result[result.length - 1].text)) {
-        result.pop();
-      }
+      result = result.filter(w => /[\d+\-]/.test(w.text));
+    } else if (type === 'OTP') {
+      result = result.filter(w => /^\d+$/.test(w.text.replace(/[^0-9]/g, '')));
     }
     return result;
   }
@@ -107,12 +122,12 @@
       };
     }
 
-    // Trigger words for OTP proximity detection
-    const otpTriggerKeywords = ['otp', 'code', 'verification', 'verify', 'pin', 'passcode', 'security', 'auth'];
+    // Trigger words for OTP proximity detection (explicit OTP/PIN keywords only)
+    const otpTriggerKeywords = ['otp', 'one-time', 'passcode', 'verification', 'verify', 'pin', '2fa', 'mfa'];
     const triggerWordBoxes = words
       .map((w, idx) => ({ ...w, originalIdx: idx }))
       .filter(w => {
-        const clean = w.text.toLowerCase().replace(/[^a-z]/g, '');
+        const clean = w.text.toLowerCase().replace(/[^a-z0-9]/g, '');
         return otpTriggerKeywords.includes(clean);
       });
 
@@ -215,19 +230,30 @@
             matchType = 'CARD';
             matchedText = joinedSpace;
           }
-          // 4. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP)
+          // 4. OTP (4-8 digits near trigger keywords or standalone 6-digit OTP, excluding calendar years)
           else if (/^\d{4,8}$/.test(cleanText) || (normalizedDigits.length >= 4 && normalizedDigits.length <= 8 && /^\d+$/.test(cleanText))) {
-            const sliceBbox = computeMergedBbox(rawSlice.map((w) => w.bbox));
-            const isNearTrigger = triggerWordBoxes.some((tb) => {
-              if (rawSlice.some((sw) => sw.originalIdx === tb.originalIdx)) return false;
-              const dist = getBboxDistance(sliceBbox, tb.bbox);
-              const isSameRow = Math.abs((sliceBbox.y + sliceBbox.height / 2) - (tb.bbox.y + tb.bbox.height / 2)) < 50;
-              return dist <= 280 || (isSameRow && dist <= 400);
-            });
+            const numVal = parseInt(digits, 10);
+            const isYear = digits.length === 4 && numVal >= 1900 && numVal <= 2099;
+            
+            // Check context for dates (e.g. Q1-Q4, FY, yr, year, months)
+            const prevWord = (i > 0 && line[i - 1]) ? line[i - 1].text.toLowerCase() : '';
+            const nextWord = (i + winSize < n && line[i + winSize]) ? line[i + winSize].text.toLowerCase() : '';
+            const isDateContext = /^(q[1-4]|fy|v|ver|version|yr|year|since|est|in|on|of|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i.test(prevWord.replace(/[^a-z0-9]/gi, '')) ||
+                                  /^(q[1-4]|fy|yr|year|edition|release)$/i.test(nextWord.replace(/[^a-z0-9]/gi, ''));
 
-            if (isNearTrigger || (cleanText.length === 6 && digits.length === 6)) {
-              matchType = 'OTP';
-              matchedText = cleanText;
+            if (!isYear && !isDateContext) {
+              const sliceBbox = computeMergedBbox(rawSlice.map((w) => w.bbox));
+              const isNearTrigger = triggerWordBoxes.some((tb) => {
+                if (rawSlice.some((sw) => sw.originalIdx === tb.originalIdx)) return false;
+                const dist = getBboxDistance(sliceBbox, tb.bbox);
+                const isSameRow = Math.abs((sliceBbox.y + sliceBbox.height / 2) - (tb.bbox.y + tb.bbox.height / 2)) < 30;
+                return dist <= 120 || (isSameRow && dist <= 160);
+              });
+
+              if (isNearTrigger || (cleanText.length === 6 && digits.length === 6 && !/^(19|20)\d\d/.test(digits))) {
+                matchType = 'OTP';
+                matchedText = cleanText;
+              }
             }
           }
 
