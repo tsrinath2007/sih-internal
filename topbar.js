@@ -225,7 +225,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return text;
   }
 
-  function downscaleImageForOCR(dataUrl, maxDimension = 1600) {
+  function downscaleImageForOCR(dataUrl, maxDimension = 2560) {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -307,7 +307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       setStatus('Processing On-Device OCR & PII Detection...', 'processing');
 
       // High-Speed Downscaled OCR Pre-processing
-      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
+      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 2560);
 
       let rawWords = [];
       try {

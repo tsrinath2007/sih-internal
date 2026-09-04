@@ -214,7 +214,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
 
-      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 1600);
+      const optimizedImage = await downscaleImageForOCR(screenshotDataUrl, 2560);
 
       const worker = await Tesseract.createWorker('eng', 1, {
         workerPath: chrome.runtime.getURL('lib/worker.min.js'),
