@@ -640,6 +640,87 @@ describe('PIIDetectorDOM Unit Tests', () => {
       expect(cv.isPositionUncertain).toBe(false);
     });
   });
+
+  describe('Image-Embedded Card Graphic (OCR-only perception) & Zero Silent Drops', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    it('correctly detects and redacts card number inside image graphic with low OCR confidence (24%)', () => {
+      // Card rendered inside an <img> element: no DOM text nodes exist.
+      // OCR perceives the embossed digits on the image pixels with challenging contrast (24% confidence).
+      const cardGraphicWords = [
+        { text: '4532', confidence: 24, source: 'OCR', bbox: { x: 320, y: 450, width: 45, height: 18 } },
+        { text: '0150', confidence: 23, source: 'OCR', bbox: { x: 370, y: 450, width: 45, height: 18 } },
+        { text: '1234', confidence: 25, source: 'OCR', bbox: { x: 420, y: 450, width: 45, height: 18 } },
+        { text: '5671', confidence: 24, source: 'OCR', bbox: { x: 470, y: 450, width: 45, height: 18 } }
+      ];
+
+      const domWords: any[] = [
+        // DOM only contains surrounding non-card text
+        { text: 'Payment', confidence: 99, source: 'DOM', bbox: { x: 50, y: 100, width: 60, height: 20 } },
+        { text: 'Method', confidence: 99, source: 'DOM', bbox: { x: 115, y: 100, width: 55, height: 20 } }
+      ];
+
+      // Merge words (DOM + OCR)
+      const mergedWords = [...domWords, ...cardGraphicWords];
+
+      // Run detections
+      const domResult = PIIDetector.detectPII(domWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
+      const ocrResult = PIIDetector.detectPII(cardGraphicWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
+      const mergedResult = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
+
+      // Cross-validation: no conflicting DOM card match exists, so position is NOT uncertain
+      const cv = PIIDetector.crossValidatePositions(domResult.matches, ocrResult.matches, { maxDistance: 40 });
+      expect(cv.isPositionUncertain).toBe(false);
+
+      // Card is detected cleanly at the exact image graphic pixel coordinates
+      const cardMatches = mergedResult.matches.filter((m: any) => m.type === 'CARD');
+      expect(cardMatches.length).toBe(1);
+      expect(cardMatches[0].bbox.x).toBe(320);
+      expect(cardMatches[0].bbox.y).toBe(450);
+      expect(cardMatches[0].bbox.width).toBe(195);
+      expect(cardMatches[0].isLowConfidence).toBe(false); // Accepted due to Luhn checksum!
+      expect(mergedResult.isBlocked).toBe(false);
+
+      // Redaction text generation replaces the card tokens
+      const redacted = PIIDetector.generateSanitizedText(mergedWords, mergedResult.matches);
+      expect(redacted).toContain('[REDACTED CARD]');
+      expect(redacted).not.toContain('4532');
+      expect(redacted).not.toContain('5671');
+    });
+
+    it('blocks with "position uncertain" and preserves both bounding boxes if DOM and OCR positions diverge > 40px', () => {
+      // Suppose a placeholder DOM element has the card number at (100, 200),
+      // but the rendered card graphic on the canvas is at (220, 200) (dx = 120px).
+      const domCardMatch = {
+        type: 'CARD',
+        matchedText: '4532 0150 1234 5671',
+        bbox: { x: 100, y: 200, width: 200, height: 30 }
+      };
+      const ocrCardMatch = {
+        type: 'CARD',
+        matchedText: '4532 0150 1234 5671',
+        bbox: { x: 220, y: 200, width: 200, height: 30 }
+      };
+
+      const cv = PIIDetector.crossValidatePositions([domCardMatch], [ocrCardMatch], { maxDistance: 40 });
+      expect(cv.isPositionUncertain).toBe(true);
+      expect(cv.reason).toBe('Sensitive match found but position could not be confirmed — review manually.');
+
+      // Zero silent drops: both candidate boxes are accounted for
+      const preservedMatches = [domCardMatch];
+      if (cv.isPositionUncertain) {
+        for (const pair of cv.uncertainPairs) {
+          const hasOcr = preservedMatches.some((m: any) => Math.abs(m.bbox.x - pair.ocrMatch.bbox.x) < 10);
+          if (!hasOcr) preservedMatches.push(pair.ocrMatch);
+        }
+      }
+
+      expect(preservedMatches.length).toBe(2);
+      expect(preservedMatches.some((m: any) => m.bbox.x === 100)).toBe(true);
+      expect(preservedMatches.some((m: any) => m.bbox.x === 220)).toBe(true);
+    });
+  });
 });
 
 
