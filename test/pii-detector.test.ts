@@ -266,6 +266,73 @@ describe('PIIDetectorDOM Unit Tests', () => {
     expect(pwdMatch).toBeDefined();
     expect(pwdMatch.matchedText).toBe('SRINATHHH');
   });
+
+  it('detects wide-gap embossed credit cards, mock cards, and expiry dates from physical card images', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    // Words modeled directly from Barclaycard mock card image with 80-100px gaps between 4-digit blocks
+    const cardWords = [
+      { text: 'BARCLAYCARD', confidence: 98, bbox: { x: 50, y: 50, width: 140, height: 24 } },
+      { text: 'BUSINESS', confidence: 98, bbox: { x: 200, y: 50, width: 100, height: 24 } },
+      // Card number with wide gaps: (180 - (50+80) = 50px), (310 - (180+80) = 50px), (440 - (310+80) = 50px)
+      { text: '5476', confidence: 99, bbox: { x: 50, y: 150, width: 80, height: 32 } },
+      { text: '7678', confidence: 99, bbox: { x: 210, y: 150, width: 80, height: 32 } },
+      { text: '9876', confidence: 99, bbox: { x: 370, y: 150, width: 80, height: 32 } },
+      { text: '5432', confidence: 99, bbox: { x: 530, y: 150, width: 80, height: 32 } },
+      // Expiry line
+      { text: '01/14', confidence: 95, bbox: { x: 50, y: 220, width: 50, height: 20 } },
+      { text: 'VALID', confidence: 95, bbox: { x: 120, y: 220, width: 45, height: 20 } },
+      { text: 'THRU', confidence: 95, bbox: { x: 175, y: 220, width: 45, height: 20 } },
+      { text: '01/18', confidence: 97, bbox: { x: 230, y: 220, width: 50, height: 20 } },
+      { text: 'COMPANY', confidence: 95, bbox: { x: 50, y: 280, width: 90, height: 20 } },
+      { text: 'NAME', confidence: 95, bbox: { x: 150, y: 280, width: 50, height: 20 } },
+      { text: 'M', confidence: 95, bbox: { x: 210, y: 280, width: 15, height: 20 } },
+      { text: 'STEPHENS', confidence: 95, bbox: { x: 235, y: 280, width: 90, height: 20 } },
+      { text: 'MasterCard', confidence: 98, bbox: { x: 450, y: 280, width: 100, height: 30 } }
+    ];
+
+    const result = PIIDetector.detectPII(cardWords);
+
+    // Card number and expiry should both be detected
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBeGreaterThanOrEqual(2);
+
+    // Verify 16-digit card number detection
+    const fullCardMatch = cardMatches.find((m: any) => m.matchedText.includes('5476'));
+    expect(fullCardMatch).toBeDefined();
+    expect(fullCardMatch.matchedText).toContain('5476 7678 9876 5432');
+    expect(fullCardMatch.bbox.width).toBeGreaterThanOrEqual(550); // Covers from x:50 to x:610
+
+    // Verify expiry date detection
+    const expiryMatch = cardMatches.find((m: any) => m.matchedText.includes('01/18'));
+    expect(expiryMatch).toBeDefined();
+  });
+
+  it('detects CVV and American Express card formats', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PIIDetector = require('../pii-detector');
+
+    const amexAndCvvWords = [
+      { text: 'Amex:', confidence: 95, bbox: { x: 50, y: 50, width: 45, height: 18 } },
+      { text: '3782', confidence: 98, bbox: { x: 105, y: 50, width: 50, height: 18 } },
+      { text: '822463', confidence: 98, bbox: { x: 165, y: 50, width: 70, height: 18 } },
+      { text: '10005', confidence: 98, bbox: { x: 245, y: 50, width: 60, height: 18 } },
+      { text: 'CVV:', confidence: 95, bbox: { x: 50, y: 100, width: 40, height: 18 } },
+      { text: '849', confidence: 99, bbox: { x: 100, y: 100, width: 35, height: 18 } }
+    ];
+
+    const result = PIIDetector.detectPII(amexAndCvvWords);
+    const cardMatches = result.matches.filter((m: any) => m.type === 'CARD');
+    expect(cardMatches.length).toBe(2);
+
+    const amexMatch = cardMatches.find((m: any) => m.matchedText.includes('3782'));
+    expect(amexMatch).toBeDefined();
+
+    const cvvMatch = cardMatches.find((m: any) => m.matchedText.includes('849'));
+    expect(cvvMatch).toBeDefined();
+  });
 });
+
 
 

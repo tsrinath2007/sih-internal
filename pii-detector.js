@@ -166,7 +166,7 @@
       while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[result.length - 1].text))) {
         result.pop();
       }
-      result = result.filter(w => /[\d\-]/.test(unwrapUnicodeSmallText(w.text)));
+      result = result.filter(w => /[\d\-\/]/.test(unwrapUnicodeSmallText(w.text)));
     } else if (type === 'PHONE') {
       while (result.length > 0 && !/[\d+]/.test(unwrapUnicodeSmallText(result[0].text))) {
         result.shift();
@@ -246,7 +246,7 @@
       for (const line of lines) {
         const avgY = line.reduce((sum, w) => sum + w.bbox.y, 0) / line.length;
         const avgH = line.reduce((sum, w) => sum + w.bbox.height, 0) / line.length;
-        if (Math.abs(word.bbox.y - avgY) < Math.max(14, avgH * 0.65)) {
+        if (Math.abs(word.bbox.y - avgY) < Math.max(18, avgH * 0.75)) {
           line.push(word);
           placed = true;
           break;
@@ -274,7 +274,8 @@
           let gapTooBig = false;
           for (let g = 0; g < rawSlice.length - 1; g++) {
             const gap = rawSlice[g + 1].bbox.x - (rawSlice[g].bbox.x + rawSlice[g].bbox.width);
-            if (gap > 75) {
+            const maxAllowedGap = Math.max(160, (rawSlice[g].bbox.height || 20) * 4.5);
+            if (gap > maxAllowedGap) {
               gapTooBig = true;
               break;
             }
@@ -358,20 +359,53 @@
             matchType = 'IFSC';
             matchedText = cleanNone.toUpperCase();
           }
-          // 6. PAYMENT CARD (13-19 digits: Luhn validated OR standard card format 4-4-4-4 / 4-6-5 with card prefix/keywords)
+          // 6. PAYMENT CARD (13-19 digits: Luhn validated OR 4x4 / 4-6-5 blocks OR 15-16 digits with card prefixes/context/mock cards)
           else if (
             digits.length >= 13 && digits.length <= 19 &&
-            !/^(account|acc|wire|phone|tel)/i.test(prevWord1) &&
+            !/^(account|acc|wire|phone|tel|ifsc|pan|dob)/i.test(prevWord1) &&
             (
               luhnCheck(digits) ||
+              (digits.length === 16 && (/^[2-6]/.test(digits) || /^(\d{4}[\s\-]?){4}$/.test(cleanText) || rawSlice.length === 4)) ||
+              (digits.length === 15 && (/^3[47]/.test(digits) || /^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText))) ||
               (/^(\d{4}[\s\-]?){3}\d{1,4}$/.test(cleanText) && /^(4|5[1-5]|2[2-7]|3[47]|6011|65|35)/.test(digits)) ||
-              (/^3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}$/.test(cleanText)) ||
-              (/^(card|visa|mastercard|amex|debit|credit)/i.test(prevWord1)) ||
-              (/^(card|visa|mastercard|amex|debit|credit)/i.test(prevWord2))
+              /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord1) ||
+              /^(card|visa|mastercard|master|amex|debit|credit|barclaycard|barclays|discover|rupay|diners|maestro|jcb)/i.test(prevWord2)
             )
           ) {
             matchType = 'CARD';
             matchedText = joinedSpace;
+          }
+          // 6b. CARD EXPIRY DATE (e.g. VALID THRU 01/18, 01/14, EXP 12/28, MM/YY, MM/YYYY)
+          else if (
+            /^(0[1-9]|1[0-2])[\/\-](20\d{2}|\d{2})$/.test(cleanText) &&
+            (
+              /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(prevWord1) ||
+              /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(prevWord2) ||
+              (line[i + winSize] && /^(valid|thru|through|exp|expires|expiry|good|until|month\/year|mth\/yr|from)/i.test(unwrapUnicodeSmallText(line[i + winSize].text))) ||
+              /^(valid[\s\-]+thru|good[\s\-]+thru|expires[\s\-]+end|valid[\s\-]+from|exp|expiry)[\s\:\-]+/i.test(joinedSpace)
+            )
+          ) {
+            matchType = 'CARD';
+            matchedText = cleanText;
+          }
+          // 6c. CARD EXPIRY PHRASE (e.g. "VALID THRU 01/18", "GOOD THRU 05/27", "EXP 12/28", "VALID FROM 01/14")
+          else if (
+            /^(valid[\s\-]+thru|good[\s\-]+thru|expires[\s\-]+end|valid[\s\-]+from|exp|expires|expiry)[\s\:\-]+(0[1-9]|1[0-2])[\/\-](20\d{2}|\d{2})$/i.test(cleanText)
+          ) {
+            matchType = 'CARD';
+            matchedText = cleanText;
+          }
+          // 6d. CVV / CVC / SECURITY CODE (3-4 digits near CVV/CVC/CID/CSC)
+          else if (
+            /^\d{3,4}$/.test(cleanText) &&
+            (
+              /^(cvv|cvc|cvv2|cvc2|cid|csc|security_code|security)[\s\:\-]*$/i.test(prevWord1) ||
+              /^(cvv|cvc|cvv2|cvc2|cid|csc|security_code|security)[\s\:\-]*$/i.test(prevWord2) ||
+              /^(cvv|cvc|cid|csc)[\s\:\-]+\d{3,4}$/i.test(cleanText)
+            )
+          ) {
+            matchType = 'CARD';
+            matchedText = cleanText;
           }
           // 7. BANK ACCOUNT NUMBERS (9-18 digits preceded by Account, Acc, A/C, Wire, Beneficiary, Settlement keywords)
           else if (
