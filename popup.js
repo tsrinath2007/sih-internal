@@ -16,10 +16,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Redaction Export & Action Buttons
   const downloadSanBtn = document.getElementById('downloadSanBtn');
-  const copySanImgBtn = document.getElementById('copySanImgBtn');
-  const copySanTextBtn = document.getElementById('copySanTextBtn');
-  const toggleInPageShieldBtn = document.getElementById('toggleInPageShieldBtn');
-  const inPageShieldText = document.getElementById('inPageShieldText');
 
   // Privacy Audit & Header Elements
   const auditDetectedCount = document.getElementById('auditDetectedCount');
@@ -38,7 +34,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let isScanning = false;
   let currentScanData = null;
-  let isInPageShieldActive = false;
 
   // Toggle In-Page Top Bar HUD
   if (toggleTopBarBtn) {
@@ -582,71 +577,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       link.href = sanitizedCanvas.toDataURL('image/png');
       link.click();
       setStatus('✓ Redacted image downloaded!', 'ready');
-    });
-  }
-
-  // Handle Copy Sanitized Image to Clipboard
-  if (copySanImgBtn) {
-    copySanImgBtn.addEventListener('click', () => {
-      if (!sanitizedCanvas || sanitizedCanvas.width === 0) {
-        setStatus('Scan the page first before copying', 'warning');
-        return;
-      }
-      sanitizedCanvas.toBlob(async (blob) => {
-        if (blob && navigator.clipboard && navigator.clipboard.write) {
-          try {
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            setStatus('✓ Redacted image copied to clipboard!', 'ready');
-          } catch (e) {
-            console.warn('[Parallax] Clipboard copy error:', e);
-            setStatus('Clipboard copy failed. Try downloading image.', 'warning');
-          }
-        }
-      });
-    });
-  }
-
-  // Handle Copy Sanitized Text
-  if (copySanTextBtn) {
-    copySanTextBtn.addEventListener('click', () => {
-      if (!currentScanData || !currentScanData.sanitized_ocr_text) {
-        setStatus('Scan the page first before copying text', 'warning');
-        return;
-      }
-      navigator.clipboard.writeText(currentScanData.sanitized_ocr_text).then(() => {
-        setStatus('✓ Sanitized OCR text copied to clipboard!', 'ready');
-      }).catch(err => {
-        console.warn('Clipboard write text error:', err);
-      });
-    });
-  }
-
-  // Handle In-Page Shield Overlay Toggle
-  if (toggleInPageShieldBtn) {
-    toggleInPageShieldBtn.addEventListener('click', async () => {
-      if (!currentScanData || !currentScanData.pii_matches) {
-        setStatus('Scan the page first to detect sensitive regions', 'warning');
-        return;
-      }
-      isInPageShieldActive = !isInPageShieldActive;
-      const activeTab = await getActiveWebTab();
-      if (activeTab && activeTab.id) {
-        chrome.tabs.sendMessage(activeTab.id, {
-          action: isInPageShieldActive ? 'APPLY_PAGE_SHIELD' : 'CLEAR_PAGE_SHIELD',
-          piiMatches: currentScanData.pii_matches
-        }, (res) => {
-          if (inPageShieldText) {
-            inPageShieldText.textContent = isInPageShieldActive ? 'Shield Active (Clear)' : 'Shield Webpage';
-          }
-          if (isInPageShieldActive) {
-            toggleInPageShieldBtn.classList.add('active');
-            setStatus('✓ Live in-page privacy masks applied to webpage!', 'ready');
-          } else {
-            toggleInPageShieldBtn.classList.remove('active');
-            setStatus('In-page privacy masks cleared', 'idle');
-          }
-        });
-      }
     });
   }
 

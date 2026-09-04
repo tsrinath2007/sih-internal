@@ -4,7 +4,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   let isScanning = false;
   let currentScanData = null;
   let isDrawerOpen = false;
-  let isPageShieldActive = false;
 
   // Persistent WebAssembly Worker Pool (Pre-warmed in memory)
   let cachedWorker = null;
@@ -21,10 +20,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Redaction Toolbar Export Tools
   const downloadBtn = document.getElementById('ptbDownloadBtn');
-  const copyImgBtn = document.getElementById('ptbCopyImgBtn');
-  const copyTextBtn = document.getElementById('ptbCopyTextBtn');
-  const shieldPageBtn = document.getElementById('ptbShieldPageBtn');
-  const shieldPageText = document.getElementById('ptbShieldPageText');
 
   const origCanvas = document.getElementById('ptbOriginalCanvas');
   const sanCanvas = document.getElementById('ptbSanitizedCanvas');
@@ -664,68 +659,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       link.href = sanCanvas.toDataURL('image/png');
       link.click();
       setStatus('✓ Redacted image downloaded!', 'ready');
-    });
-  }
-
-  // Handle Copy Sanitized Image to Clipboard
-  if (copyImgBtn) {
-    copyImgBtn.addEventListener('click', () => {
-      if (!sanCanvas || sanCanvas.width === 0) {
-        setStatus('Scan the page first before copying', 'warning');
-        return;
-      }
-      sanCanvas.toBlob(async (blob) => {
-        if (blob && navigator.clipboard && navigator.clipboard.write) {
-          try {
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            setStatus('✓ Redacted image copied to clipboard!', 'ready');
-          } catch (e) {
-            console.warn('[Parallax] Clipboard copy error:', e);
-            setStatus('Clipboard copy failed. Try downloading image.', 'warning');
-          }
-        }
-      });
-    });
-  }
-
-  // Handle Copy Sanitized Text
-  if (copyTextBtn) {
-    copyTextBtn.addEventListener('click', () => {
-      if (!currentScanData || !currentScanData.sanitized_ocr_text) {
-        setStatus('Scan the page first before copying text', 'warning');
-        return;
-      }
-      navigator.clipboard.writeText(currentScanData.sanitized_ocr_text).then(() => {
-        setStatus('✓ Sanitized OCR text copied to clipboard!', 'ready');
-      }).catch(err => {
-        console.warn('Clipboard write text error:', err);
-      });
-    });
-  }
-
-  // Handle In-Page Shield Overlay Toggle
-  if (shieldPageBtn) {
-    shieldPageBtn.addEventListener('click', () => {
-      if (!currentScanData || !currentScanData.pii_matches) {
-        setStatus('Scan the page first to detect sensitive regions', 'warning');
-        return;
-      }
-      isPageShieldActive = !isPageShieldActive;
-      window.parent.postMessage({
-        type: isPageShieldActive ? 'PARALLAX_APPLY_PAGE_SHIELD' : 'PARALLAX_CLEAR_PAGE_SHIELD',
-        piiMatches: currentScanData.pii_matches
-      }, '*');
-
-      if (shieldPageText) {
-        shieldPageText.textContent = isPageShieldActive ? 'Shield Active (Clear)' : 'Shield Webpage';
-      }
-      if (isPageShieldActive) {
-        shieldPageBtn.classList.add('active');
-        setStatus('✓ Live in-page privacy masks applied to webpage!', 'ready');
-      } else {
-        shieldPageBtn.classList.remove('active');
-        setStatus('In-page privacy masks cleared', 'idle');
-      }
     });
   }
 

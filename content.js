@@ -1,4 +1,4 @@
-// Parallax Content Script - Injects Top Bar HUD, 60 FPS Instant DOM Spatial Radar & In-Page Shield
+// Parallax Content Script - Injects Top Bar HUD & 60 FPS Instant DOM Spatial Radar
 
 (function () {
   if (document.getElementById('parallax-topbar-iframe')) return;
@@ -24,9 +24,8 @@
   document.body.style.marginTop = '54px';
 
   let isVisible = true;
-  let pageShieldActive = false;
 
-  // 2. Inject Clean Focus Highlight & Privacy Redaction Shield Styles into Host Page
+  // 2. Inject Clean Focus Highlight Styles into Host Page
   const styleEl = document.createElement('style');
   styleEl.id = 'parallax-live-shield-styles';
   styleEl.textContent = `
@@ -39,29 +38,6 @@
     @keyframes parallaxPulseRing {
       from { box-shadow: 0 0 10px rgba(0, 242, 254, 0.5); }
       to { box-shadow: 0 0 30px rgba(0, 242, 254, 0.9); }
-    }
-    .parallax-inpage-shield-mask {
-      position: absolute !important;
-      z-index: 2147483640 !important;
-      background: #030712 !important;
-      border: 1.5px solid #00f2fe !important;
-      border-radius: 4px !important;
-      color: #ffffff !important;
-      font-family: 'JetBrains Mono', 'Segoe UI', monospace !important;
-      font-size: 11px !important;
-      font-weight: 800 !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.8) !important;
-      pointer-events: auto !important;
-      backdrop-filter: blur(8px) !important;
-      transition: opacity 0.2s ease !important;
-    }
-    .parallax-inpage-shield-mask.avatar-mask {
-      backdrop-filter: blur(16px) saturate(180%) !important;
-      background: rgba(3, 7, 18, 0.85) !important;
-      border-color: #a855f7 !important;
     }
   `;
   document.head.appendChild(styleEl);
@@ -255,40 +231,7 @@
     return words;
   }
 
-  // Function to apply in-page redaction blackout masks
-  function applyInPageShield(piiMatches) {
-    clearInPageShield();
-    if (!Array.isArray(piiMatches) || piiMatches.length === 0) return;
-
-    const scrollX = window.scrollX || window.pageXOffset || 0;
-    const scrollY = window.scrollY || window.pageYOffset || 0;
-
-    for (const match of piiMatches) {
-      if (!match.bbox) continue;
-      const mask = document.createElement('div');
-      const isAvatar = match.type === 'AVATAR';
-      mask.className = isAvatar ? 'parallax-inpage-shield-mask avatar-mask' : 'parallax-inpage-shield-mask';
-      
-      const pad = 4;
-      mask.style.left = `${match.bbox.x + scrollX - pad}px`;
-      mask.style.top = `${match.bbox.y + scrollY - pad}px`;
-      mask.style.width = `${match.bbox.width + pad * 2}px`;
-      mask.style.height = `${match.bbox.height + pad * 2}px`;
-      mask.setAttribute('data-parallax-mask', 'true');
-      mask.textContent = isAvatar ? '🔒 [MOSAIC FACE]' : `[REDACTED ${match.type}]`;
-
-      document.body.appendChild(mask);
-    }
-    pageShieldActive = true;
-  }
-
-  function clearInPageShield() {
-    const existing = document.querySelectorAll('[data-parallax-mask="true"]');
-    existing.forEach((el) => el.remove());
-    pageShieldActive = false;
-  }
-
-  // 5. Message Router (HUD <-> Host Webpage)
+  // 4. Message Router (HUD <-> Host Webpage)
   window.addEventListener('message', (event) => {
     if (!event.data || typeof event.data !== 'object') return;
 
@@ -303,14 +246,6 @@
           devicePixelRatio: window.devicePixelRatio || 1
         }, '*');
       }
-    }
-
-    if (event.data.type === 'PARALLAX_APPLY_PAGE_SHIELD') {
-      applyInPageShield(event.data.piiMatches || []);
-    }
-
-    if (event.data.type === 'PARALLAX_CLEAR_PAGE_SHIELD') {
-      clearInPageShield();
     }
 
     if (event.data.type === 'PARALLAX_RESIZE_IFRAME') {
@@ -353,18 +288,6 @@
       iframe.style.display = isVisible ? 'block' : 'none';
       document.body.style.marginTop = isVisible ? '54px' : '0px';
       sendResponse({ visible: isVisible });
-      return true;
-    }
-
-    if (message && message.action === 'APPLY_PAGE_SHIELD') {
-      applyInPageShield(message.piiMatches || []);
-      sendResponse({ success: true, active: true });
-      return true;
-    }
-
-    if (message && message.action === 'CLEAR_PAGE_SHIELD') {
-      clearInPageShield();
-      sendResponse({ success: true, active: false });
       return true;
     }
   });

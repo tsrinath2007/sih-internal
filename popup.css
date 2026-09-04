@@ -243,18 +243,6 @@ body {
   transform: translateY(-1px);
 }
 
-.tool-btn-accent {
-  background: rgba(0, 242, 254, 0.12);
-  border-color: rgba(0, 242, 254, 0.4);
-  color: #00f2fe;
-}
-
-.tool-btn-accent.active {
-  background: rgba(16, 185, 129, 0.2);
-  border-color: #10b981;
-  color: #34d399;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.35);
-}
 
 .tag-EMAIL { background: #0284c7; color: #ffffff; }
 .tag-PHONE { background: #0d9488; color: #ffffff; }
