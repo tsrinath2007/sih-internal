@@ -822,16 +822,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       sendBtn.disabled = true;
 
       try {
-        const response = await fetch('http://localhost:3001/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sanitized_ocr_text: currentScanData.sanitized_ocr_text,
-            sanitized_image: sanitizedImageDataUrl,
-            task: selectedTask,
-            user_prompt: customPrompt
-          })
-        });
+        const payload = {
+          sanitized_ocr_text: currentScanData.sanitized_ocr_text,
+          sanitized_image: sanitizedImageDataUrl,
+          task: selectedTask,
+          user_prompt: customPrompt
+        };
+
+        let response = null;
+        try {
+          response = await fetch('http://localhost:3001/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } catch (e1) {
+          response = await fetch('http://127.0.0.1:3001/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response || !response.ok) {
+          throw new Error(`Backend Offline: Start backend with "npm start" (HTTP ${response ? response.status : 'offline'})`);
+        }
 
         const data = await response.json();
         currentProposedAction = data;
@@ -999,16 +1014,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const sanitizedImageDataUrl = sanCanvas ? sanCanvas.toDataURL('image/jpeg', 0.8) : '';
-      const response = await fetch('http://localhost:3001/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sanitized_ocr_text: currentScanData.sanitized_ocr_text,
-          sanitized_image: sanitizedImageDataUrl,
-          task: 'auto_guide',
-          user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`
-        })
-      });
+      const payload = {
+        sanitized_ocr_text: currentScanData.sanitized_ocr_text,
+        sanitized_image: sanitizedImageDataUrl,
+        task: 'auto_guide',
+        user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`
+      };
+
+      let response = null;
+      try {
+        response = await fetch('http://localhost:3001/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e1) {
+        response = await fetch('http://127.0.0.1:3001/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      if (!response || !response.ok) {
+        throw new Error(`Backend Offline: Start backend with "npm start" (HTTP ${response ? response.status : 'offline'})`);
+      }
 
       const data = await response.json();
       currentProposedAction = data;

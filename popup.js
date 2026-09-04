@@ -737,14 +737,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
 
       try {
-        const response = await fetch('http://localhost:3001/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        let response = null;
+        try {
+          response = await fetch('http://localhost:3001/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } catch (e1) {
+          response = await fetch('http://127.0.0.1:3001/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
 
-        if (!response.ok) {
-          throw new Error(`Server returned HTTP ${response.status}: ${response.statusText}`);
+        if (!response || !response.ok) {
+          throw new Error(`Server returned HTTP ${response ? response.status : 'offline'}`);
         }
 
         const data = await response.json();
@@ -799,8 +808,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       } catch (err) {
         console.error('[Parallax] Failed to send sanitized context to backend:', err);
-        setStatus(`Backend Error: ${err.message}`, 'error');
-        if (auditActionStatus) auditActionStatus.textContent = 'Backend Error';
+        const isOffline = err.message && (err.message.includes('Failed to fetch') || err.message.includes('offline'));
+        const errorMsg = isOffline ? 'Backend Offline: Start backend with "npm start" (http://localhost:3001)' : `Backend Error: ${err.message}`;
+        setStatus(errorMsg, 'error');
+        if (auditActionStatus) auditActionStatus.textContent = isOffline ? 'Backend Offline' : 'Backend Error';
         sendBtn.disabled = false;
       }
     });
@@ -964,17 +975,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const sanitizedImageDataUrl = sanitizedCanvas ? sanitizedCanvas.toDataURL('image/jpeg', 0.8) : '';
-      const response = await fetch('http://localhost:3001/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sanitized_ocr_text: currentScanData.sanitized_ocr_text,
-          sanitized_image: sanitizedImageDataUrl,
-          task: 'auto_guide',
-          user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`,
-          page_type: 'webpage'
-        })
-      });
+      const payload = {
+        sanitized_ocr_text: currentScanData.sanitized_ocr_text,
+        sanitized_image: sanitizedImageDataUrl,
+        task: 'auto_guide',
+        user_prompt: `User Follow-Up Instruction/Question: "${query}"\nPrevious Decision: ${JSON.stringify(currentProposedAction || {})}`,
+        page_type: 'webpage'
+      };
+
+      let response = null;
+      try {
+        response = await fetch('http://localhost:3001/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e1) {
+        response = await fetch('http://127.0.0.1:3001/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      if (!response || !response.ok) {
+        throw new Error(`Backend Offline: Start backend with "npm start" (HTTP ${response ? response.status : 'offline'})`);
+      }
 
       const data = await response.json();
       currentProposedAction = data;
