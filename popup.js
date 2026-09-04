@@ -777,24 +777,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (rejectBtn) rejectBtn.disabled = false;
 
         if (proposedActionText) {
-          const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
-          const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
+          const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
+          const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
 
           proposedActionText.innerHTML = `
-            <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
+            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
               ${modelBadge}
               ${confidenceBadge}
-              <span style="font-size: 10.5px; color: #94a3b8;">Goal: <strong>${data.goal_state || 'Form Automation'}</strong></span>
+              <span style="font-size: 11.5px; color: #94a3b8; margin-left: 2px;">Goal: <strong style="color: #f8fafc;">${data.goal_state || 'Form Automation'}</strong></span>
             </div>
-            <div style="background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
-              <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px;"><strong>🤖 Live Cloud LLM Rationale:</strong></div>
-              <div style="font-size: 11.5px; color: #f8fafc; line-height: 1.45;">"${data.rationale || data.content}"</div>
+            <div style="background: #030712; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+              <div style="font-size: 11.5px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">🤖 Live Cloud LLM Rationale:</div>
+              <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6;">"${data.rationale || data.content}"</div>
             </div>
-            <div style="font-size: 11px; color: #cbd5e1;">
-              <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; padding: 2px 5px; border-radius: 4px;">${data.action_type || 'fill_field'} -> ${data.selector}</code> 
-              ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800;">"${data.value}"</span>` : ''}
+            <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
+              <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 3px 8px; border-radius: 5px; font-family: var(--font-mono); font-size: 11.5px;">${data.action_type || 'fill_field'} -> ${data.selector}</code> 
+              ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${data.value}"</span>` : ''}
             </div>
-            <div style="font-size: 10px; color: #38bdf8; margin-top: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 4px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 11px; color: #38bdf8; margin-top: 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
               <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
               <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
             </div>
@@ -1011,24 +1011,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (rejectBtn) rejectBtn.disabled = false;
 
       if (proposedActionText) {
-        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
-        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
+        const modelBadge = `<span style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(0, 242, 254, 0.4);">🤖 ${data.model || 'openai/gpt-oss-120b (Groq Live)'}</span>`;
+        const confidenceBadge = `<span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.4);">Confidence: ${Math.round((data.confidence || 0.98) * 100)}%</span>`;
 
         proposedActionText.innerHTML = `
-          <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
             ${modelBadge}
             ${confidenceBadge}
-            <span style="font-size: 10.5px; color: #94a3b8;">Goal: <strong>${data.goal_state || 'AI Guidance'}</strong></span>
+            <span style="font-size: 11.5px; color: #94a3b8; margin-left: 2px;">Goal: <strong style="color: #f8fafc;">${data.goal_state || 'AI Guidance'}</strong></span>
           </div>
-          <div style="background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
-            <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px;"><strong>🤖 Live Cloud LLM Response:</strong></div>
-            <div style="font-size: 11.5px; color: #f8fafc; line-height: 1.45;">"${data.rationale || data.content}"</div>
+          <div style="background: #030712; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+            <div style="font-size: 11.5px; color: #00f2fe; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.3px;">🤖 Live Cloud LLM Response:</div>
+            <div style="font-size: 12.5px; color: #f8fafc; line-height: 1.6;">"${data.rationale || data.content}"</div>
           </div>
-          <div style="font-size: 11px; color: #cbd5e1;">
-            <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; padding: 2px 5px; border-radius: 4px;">${data.action_type || 'auto_guide'} -> ${data.selector}</code> 
-            ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800;">"${data.value}"</span>` : ''}
+          <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
+            <strong>Target Action:</strong> <code style="color: #00f2fe; background: #0f172a; border: 1px solid #334155; padding: 3px 8px; border-radius: 5px; font-family: var(--font-mono); font-size: 11.5px;">${data.action_type || 'auto_guide'} -> ${data.selector}</code> 
+            ${data.value ? `&nbsp;<strong>Value:</strong> <span style="color: #34d399; font-weight: 800; background: rgba(16, 185, 129, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">"${data.value}"</span>` : ''}
           </div>
-          <div style="font-size: 10px; color: #38bdf8; margin-top: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 4px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-size: 11px; color: #38bdf8; margin-top: 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
             <span>🖼️ Redacted Image Sent: <strong>${data.payload_proof?.redacted_image_kb || 42} KB PNG (Blacked Out)</strong></span>
             <span>🔒 Raw PII Sent: <strong style="color: #10b981;">0 Bytes</strong></span>
           </div>
