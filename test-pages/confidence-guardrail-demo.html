@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parallax 80% Confidence Guardrail & Fail-Safe Portal</title>
+  <style>
+    :root {
+      --bg-gradient: radial-gradient(circle at 50% 0%, #0d1527 0%, #030712 100%);
+      --card-bg: rgba(15, 23, 42, 0.85);
+      --card-border: rgba(51, 65, 85, 0.7);
+      --card-hover: rgba(30, 41, 59, 0.95);
+      --accent-cyan: #00f2fe;
+      --accent-blue: #0284c7;
+      --accent-rose: #f43f5e;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background: #030712;
+      background-image: var(--bg-gradient);
+      color: var(--text-main);
+      padding: 40px 24px 80px 24px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .wrapper {
+      max-width: 1160px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* Top Hero Header */
+    .hero-header {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.85) 100%);
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      border-radius: 18px;
+      padding: 32px 36px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(0, 242, 254, 0.12);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #00f2fe, #38bdf8, #f59e0b, #f43f5e);
+    }
+
+    .hero-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #00f2fe, #0284c7);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 18px rgba(0, 242, 254, 0.45);
+    }
+
+    .brand-icon svg {
+      width: 22px;
+      height: 22px;
+      color: #030712;
+    }
+
+    .brand-title {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .badge-guardrail {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      color: #fca5a5;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .pulse-amber {
+      width: 8px;
+      height: 8px;
+      background: #f43f5e;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #f43f5e;
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.6; }
+    }
+
+    .hero-desc {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-muted);
+      max-width: 900px;
+    }
+
+    .hero-desc strong {
+      color: #00f2fe;
+    }
+
+    /* Policy Explainer Cards */
+    .policy-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 840px) {
+      .policy-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .policy-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+
+    .policy-card.pass {
+      border-color: rgba(16, 185, 129, 0.35);
+      background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 23, 42, 0.9) 100%);
+    }
+
+    .policy-card.block {
+      border-color: rgba(244, 63, 94, 0.4);
+      background: linear-gradient(180deg, rgba(244, 63, 94, 0.08) 0%, rgba(15, 23, 42, 0.9) 100%);
+    }
+
+    .policy-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .policy-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .policy-card.pass .policy-title { color: #34d399; }
+    .policy-card.block .policy-title { color: #fb7185; }
+
+    .policy-chip {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 12px;
+      text-transform: uppercase;
+    }
+
+    .policy-card.pass .policy-chip {
+      background: rgba(16, 185, 129, 0.2);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .policy-card.block .policy-chip {
+      background: rgba(244, 63, 94, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(244, 63, 94, 0.4);
+    }
+
+    .policy-body {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #cbd5e1;
+    }
+
+    .policy-metric {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .policy-metric .num {
+      font-size: 26px;
+      font-weight: 800;
+      font-family: ui-monospace, monospace;
+    }
+
+    .policy-card.pass .policy-metric .num { color: #10b981; }
+    .policy-card.block .policy-metric .num { color: #f43f5e; }
+
+    .policy-metric .label {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    /* Side-by-Side Live Demonstrations */
+    .benchmark-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .section-headline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(0, 242, 254, 0.1);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      color: #38bdf8;
+    }
+
+    .duo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 960px) {
+      .duo-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Card Panels */
+    .demo-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      position: relative;
+    }
+
+    .demo-card.high-contrast-card {
+      border-top: 4px solid #10b981;
+    }
+
+    .demo-card.low-contrast-card {
+      border-top: 4px solid #f43f5e;
+      /* Subtle CSS opacity to induce low confidence in DOM-based readers */
+      opacity: 0.65;
+    }
+
+    .card-top-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+    }
+
+    .card-portal-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .conf-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .conf-tag.tag-safe {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.5);
+    }
+
+    .conf-tag.tag-blocked {
+      background: rgba(244, 63, 94, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(244, 63, 94, 0.5);
+    }
+
+    /* PII Item Fields */
+    .field-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .field-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    .field-box {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .field-val-text {
+      font-size: 14px;
+      font-family: ui-monospace, monospace;
+      font-weight: 600;
+    }
+
+    /* High contrast styling */
+    .high-contrast-card .field-val-text {
+      color: #ffffff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+
+    /* Low contrast styling (washed out grey to simulate poor scan / faint thermal ink) */
+    .low-contrast-card .field-val-text {
+      color: #838e9d;
+      font-style: italic;
+      letter-spacing: 0.5px;
+      text-shadow: 0 0 1px #94a3b8;
+    }
+
+    .field-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      font-family: ui-monospace, monospace;
+    }
+
+    .badge-pass {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .badge-fail {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    /* Graphic Embedded Element (Watermarked Canvas & Payment Graphic) */
+    .graphic-preview-box {
+      border: 1px dashed rgba(51, 65, 85, 0.8);
+      border-radius: 10px;
+      padding: 14px;
+      background: rgba(10, 15, 29, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .graphic-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 600;
+      align-self: flex-start;
+    }
+
+    canvas.sim-canvas {
+      border-radius: 8px;
+      max-width: 100%;
+      height: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+
+    /* Action Outcome Simulation Banner */
+    .outcome-banner {
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      line-height: 1.5;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .outcome-banner.ready {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #a7f3d0;
+    }
+
+    .outcome-banner.blocked {
+      background: rgba(244, 63, 94, 0.12);
+      border: 1px solid rgba(244, 63, 94, 0.35);
+      color: #fecdd3;
+    }
+
+    /* Interactive Live Degradation Slider Section */
+    .interactive-section {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      border-radius: 16px;
+      padding: 28px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .slider-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .slider-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .slider-track-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    input[type=range].conf-slider {
+      flex: 1;
+      height: 8px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #f43f5e 0%, #f59e0b 60%, #10b981 80%, #00f2fe 100%);
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    input[type=range].conf-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 2px solid #00f2fe;
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.8);
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+
+    input[type=range].conf-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+
+    .slider-val-badge {
+      min-width: 90px;
+      text-align: center;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-family: ui-monospace, monospace;
+      font-size: 15px;
+      font-weight: 800;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .live-render-card {
+      background: #0b1120;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      align-items: center;
+    }
+
+    /* Technical Invariant Footnotes */
+    .invariants-box {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 12px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .invariants-box strong {
+      color: #38bdf8;
+    }
+
+    .nav-row {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 10px;
+    }
+
+    .nav-btn {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(51, 65, 85, 0.8);
+      color: #94a3b8;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn:hover {
+      background: #1e293b;
+      color: #00f2fe;
+      border-color: #00f2fe;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+
+    <!-- Top Hero Header -->
+    <header class="hero-header">
+      <div class="hero-top-row">
+        <div class="brand-group">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <circle cx="12" cy="11" r="3"></circle>
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title">Parallax 80% Confidence Threshold & Fail-Safe Portal</h1>
+            <p style="font-size: 12px; color: #94a3b8; margin-top: 2px;">Autonomous Agent Perception Security Benchmark • Zero-Leak Redaction Gating</p>
+          </div>
+        </div>
+
+        <div class="badge-guardrail">
+          <span class="pulse-amber"></span>
+          <span>80% Confidence Guardrail Active</span>
+        </div>
+      </div>
+
+      <p class="hero-desc">
+        In autonomous browser vision agents, guessing bounding boxes on blurry, degraded, or low-contrast text risks catastrophic PII leaks (e.g. leaking partial card digits or sending hallucinated tokens to cloud LLMs). Parallax enforces a strict <strong>80% OCR Confidence Guardrail</strong>: any unstructured sensitive entity below 80.0% confidence automatically triggers a <strong>Fail-Safe Block (<code>⚠️ BLOCKED</code>)</strong>, halting cloud transmission until verified.
+      </p>
+    </header>
+
+    <!-- Policy Cards -->
+    <section class="policy-grid">
+      <!-- High Confidence Policy -->
+      <div class="policy-card pass">
+        <div class="policy-header">
+          <div class="policy-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>High-Confidence Safe Path (&ge; 80%)</span>
+          </div>
+          <span class="policy-chip">Auto-Approved ✓</span>
+        </div>
+        <div class="policy-body">
+          Crisp, high-contrast DOM and graphic text nodes where OCR/DOM confidence reaches <strong>80% – 99%</strong>. Bounding boxes are mathematically and spatially deterministic. Full solid blackout redactions are applied on-device with zero coordinate jitter.
+        </div>
+        <div class="policy-metric">
+          <span class="num">&ge; 80.0%</span>
+          <span class="label">Status: READY • Guidance Allowed</span>
+        </div>
+      </div>
+
+      <!-- Low Confidence Policy -->
+      <div class="policy-card block">
+        <div class="policy-header">
+          <div class="policy-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span>Low-Confidence Fail-Safe Path (&lt; 80%)</span>
+          </div>
+          <span class="policy-chip">Safety Block ⚠️</span>
+        </div>
+        <div class="policy-body">
+          Faint, noisy, watermarked, or blurry elements where confidence falls to <strong>20% – 79.9%</strong>. Rather than guessing coordinates and leaking raw bytes, Parallax flags <code>isLowConfidence = true</code>, shifts HUD to rose alert, and halts the agent loop.
+        </div>
+        <div class="policy-metric">
+          <span class="num">&lt; 80.0%</span>
+          <span class="label">Status: BLOCKED • Manual Review Required</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Side-by-Side Live Benchmarks -->
+    <section class="benchmark-section">
+      <div class="section-headline">
+        <h2 class="section-title">
+          <span>⚡ Live Side-by-Side Evaluation Environments</span>
+        </h2>
+        <span class="section-badge">Scan Current Tab with Parallax Extension to Verify</span>
+      </div>
+
+      <div class="duo-grid">
+
+        <!-- Left: High Confidence Panel -->
+        <div class="demo-card high-contrast-card" id="highConfCard">
+          <div class="card-top-status">
+            <div class="card-portal-name">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              <span>Apex Horizon • Corporate Portal (Crisp Contrast)</span>
+            </div>
+            <span class="conf-tag tag-safe">~98.5% CONFIDENCE ✓</span>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">Account Holder</span>
+            <div class="field-box">
+              <span class="field-val-text">Elena Rostova</span>
+              <span class="field-badge badge-pass">DOM (99%)</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">Primary Payment Card (Luhn Valid)</span>
+            <div class="field-box">
+              <span class="field-val-text">4532 0150 1234 5671</span>
+              <span class="field-badge badge-pass">CARD (98%)</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">Business Email</span>
+            <div class="field-box">
+              <span class="field-val-text">elena.rostova@horizoncapital.com</span>
+              <span class="field-badge badge-pass">EMAIL (99%)</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">Registered Phone</span>
+            <div class="field-box">
+              <span class="field-val-text">+91 98450 12345</span>
+              <span class="field-badge badge-pass">PHONE (99%)</span>
+            </div>
+          </div>
+
+          <!-- Crisp Canvas-Rendered Card Graphic -->
+          <div class="graphic-preview-box">
+            <span class="graphic-label">Visual Credit Card Graphic (High Contrast OCR):</span>
+            <canvas id="highConfCanvas" class="sim-canvas" width="380" height="140"></canvas>
+          </div>
+
+          <div class="outcome-banner ready">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+            <span><strong>Outcome:</strong> Pass &bull; Status: <code>READY &bull; Safe to proceed</code> &bull; HUD badge: <code>98% ✓</code></span>
+          </div>
+        </div>
+
+        <!-- Right: Low Confidence Panel -->
+        <div class="demo-card low-contrast-card" id="lowConfCard" data-confidence="62">
+          <div class="card-top-status">
+            <div class="card-portal-name">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>Apex Security • Faint Verification Notice</span>
+            </div>
+            <span class="conf-tag tag-blocked">&lt; 80% CONFIDENCE ⚠️</span>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">Security Auditor Name (Faint Watermark)</span>
+            <div class="field-box">
+              <span class="field-val-text" data-confidence="65">Marcus Vance</span>
+              <span class="field-badge badge-fail">LOW CONTRAST (65%)</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">Confidential Audit Email</span>
+            <div class="field-box">
+              <span class="field-val-text" data-confidence="68">marcus.audit@securityfirm.org</span>
+              <span class="field-badge badge-fail">EMAIL (&lt;80% ⚠️)</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">Emergency Hotline Phone</span>
+            <div class="field-box">
+              <span class="field-val-text" data-confidence="60">+91 91234 56789</span>
+              <span class="field-badge badge-fail">PHONE (&lt;80% ⚠️)</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <span class="field-title">One-Time Verification Passcode (Faint OTP)</span>
+            <div class="field-box">
+              <span class="field-val-text" data-confidence="55">OTP: 894210</span>
+              <span class="field-badge badge-fail">OTP (&lt;80% ⚠️)</span>
+            </div>
+          </div>
+
+          <!-- Low-Contrast Noisy Canvas Graphic -->
+          <div class="graphic-preview-box">
+            <span class="graphic-label">Scanned Thermal Receipt / Watermarked Canvas (OCR Stress):</span>
+            <canvas id="lowConfCanvas" class="sim-canvas" width="380" height="140"></canvas>
+          </div>
+
+          <div class="outcome-banner blocked">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+            <span><strong>Outcome:</strong> Fail-Safe Activated &bull; Status: <code>BLOCKED &bull; Low Confidence detected</code> &bull; HUD badge: <code>62% ⚠️</code></span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Interactive Degradation / Confidence Slider -->
+    <section class="interactive-section">
+      <div class="slider-header">
+        <div class="slider-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>Interactive OCR Confidence Simulator (Judge Test Station)</span>
+        </div>
+        <span style="font-size: 12px; color: #94a3b8;">Move slider to simulate document ink fade, scanner blur & watermark noise</span>
+      </div>
+
+      <div class="slider-controls">
+        <div class="slider-track-wrap">
+          <input type="range" id="confSlider" class="conf-slider" min="20" max="99" value="65">
+          <div id="sliderValBadge" class="slider-val-badge" style="background: rgba(244, 63, 94, 0.2); color: #fca5a5; border-color: rgba(244, 63, 94, 0.4);">
+            65% (BLOCKED ⚠️)
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b; font-family: ui-monospace, monospace;">
+          <span>20% (Heavy Noise)</span>
+          <span style="color: #f59e0b;">&lt; 80% FAIL-SAFE THRESHOLD</span>
+          <span>99% (Crystal Clear)</span>
+        </div>
+      </div>
+
+      <div class="live-render-card">
+        <canvas id="interactiveCanvas" class="sim-canvas" width="560" height="150"></canvas>
+        <div id="interactiveStatusText" style="font-size: 13px; font-weight: 600; color: #fca5a5;">
+          ⚠️ Simulated Confidence is 65% (&lt; 80% Threshold) &bull; Parallax will flag <code>isLowConfidence = true</code> and block automated guidance.
+        </div>
+      </div>
+    </section>
+
+    <!-- Technical Invariants Box -->
+    <div class="invariants-box">
+      <div><strong>🔒 Security Invariant 1 (Zero Silent Drops):</strong> Low-confidence PII is never silently discarded. Doing so would leave raw PII unredacted. Instead, Parallax retains candidate bounding boxes and triggers a fail-safe halt.</div>
+      <div><strong>🧮 Security Invariant 2 (Mathematical Exception for Luhn Cards):</strong> Payment cards that satisfy the Luhn Mod-10 checksum ($O(n)$ verification) are mathematically authenticated, allowing relaxed thresholds down to 20% on metallic/embossed cards without false positives. Unstructured PII (email, phone, OTP, Aadhaar) strictly enforces the &ge; 80.0% threshold.</div>
+      <div><strong>🌐 Security Invariant 3 (Zero-Leak Cloud Transmissions):</strong> Outgoing network payloads to cloud LLMs (Groq / Grok) contain 0 bytes of raw PII regardless of whether the scan status is <code>READY</code> or <code>BLOCKED</code>.</div>
+    </div>
+
+    <!-- Navigation Footer -->
+    <div class="nav-row">
+      <a href="/test-pages/test-page-normal.html" class="nav-btn">👉 Standard Portal Test (test-page-normal.html)</a>
+      <a href="/test-pages/redaction-stress-test.html" class="nav-btn">🔥 Multi-Scale Stress Test (redaction-stress-test.html)</a>
+      <a href="/test-pages/test-page-lowconfidence.html" class="nav-btn">⚠️ Low-Contrast Edge Case (test-page-lowconfidence.html)</a>
+      <a href="/" class="nav-btn">⚡ Parallax Backend Hub</a>
+    </div>
+
+  </div>
+
+  <script>
+    // ------------------------------------------------------------------------
+    // Canvas Renderer: High-Confidence Card Graphic
+    // ------------------------------------------------------------------------
+    function drawHighConfCanvas() {
+      const cvs = document.getElementById('highConfCanvas');
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      const w = cvs.width;
+      const h = cvs.height;
+
+      // Dark crisp gradient background
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(1, '#1e293b');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Card chip
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(24, 20, 36, 26);
+
+      // Crisp White OCR-A Font for Card Number
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 18px "Courier New", monospace';
+      ctx.fillText('5412  7534  8901  2345', 24, 80);
+
+      // Cardholder & Expiry
+      ctx.font = '11px -apple-system, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('CARDHOLDER', 24, 110);
+      ctx.fillText('EXPIRES', 220, 110);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 12px -apple-system, sans-serif';
+      ctx.fillText('ELENA ROSTOVA', 24, 126);
+      ctx.fillText('08/29', 220, 126);
+
+      // MasterCard Logo
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+      ctx.beginPath();
+      ctx.arc(w - 55, h - 35, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
+      ctx.beginPath();
+      ctx.arc(w - 35, h - 35, 18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ------------------------------------------------------------------------
+    // Canvas Renderer: Low-Confidence / Scanned Thermal Receipt (Faint Text + Noise)
+    // ------------------------------------------------------------------------
+    function drawLowConfCanvas() {
+      const cvs = document.getElementById('lowConfCanvas');
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      const w = cvs.width;
+      const h = cvs.height;
+
+      // Washed out pale grey background
+      ctx.fillStyle = '#f1f5f9';
+      ctx.fillRect(0, 0, w, h);
+
+      // Simulated security watermark crosshatch pattern
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 12) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + h, h);
+        ctx.stroke();
+      }
+
+      // Faint washed-out receipt ink
+      ctx.fillStyle = '#a0aec0';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText('TRANSACTION VERIFICATION CODE:', 20, 36);
+
+      // Faint OTP with watermark interference (induces OCR confidence ~58%)
+      ctx.fillStyle = '#b0bec5';
+      ctx.font = 'bold 17px monospace';
+      ctx.fillText('OTP: 749210', 20, 68);
+
+      ctx.fillStyle = '#a0aec0';
+      ctx.font = '11px monospace';
+      ctx.fillText('CARD REF: 4111 2222 3333 4444 (UNCONFIRMED)', 20, 98);
+      ctx.fillText('PHONE: +91 88765 43210', 20, 122);
+    }
+
+    // ------------------------------------------------------------------------
+    // Interactive Dynamic Slider Canvas
+    // ------------------------------------------------------------------------
+    function updateInteractiveCanvas(confVal) {
+      const cvs = document.getElementById('interactiveCanvas');
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      const w = cvs.width;
+      const h = cvs.height;
+
+      // Clear
+      ctx.clearRect(0, 0, w, h);
+
+      // Background
+      const isHigh = confVal >= 80;
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+
+      // Contrast ratio calculation based on confVal (20 -> faint #334155, 99 -> bright #ffffff)
+      const ratio = (confVal - 20) / 79; // 0 to 1
+      const r = Math.round(51 + ratio * (255 - 51));
+      const g = Math.round(65 + ratio * (255 - 65));
+      const b = Math.round(85 + ratio * (255 - 85));
+
+      // Noise and watermark intensity (high at low conf, zero at high conf)
+      const noiseAlpha = (1 - ratio) * 0.4;
+      if (noiseAlpha > 0.05) {
+        ctx.fillStyle = `rgba(148, 163, 184, ${noiseAlpha})`;
+        for (let i = 0; i < 400; i++) {
+          const nx = Math.random() * w;
+          const ny = Math.random() * h;
+          ctx.fillRect(nx, ny, 2, 2);
+        }
+      }
+
+      // Render sensitive string with dynamic color & blur
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.font = 'bold 20px "Courier New", monospace';
+      ctx.fillText('CARD: 4532 0150 1234 5671', 30, 50);
+
+      ctx.font = '15px "Courier New", monospace';
+      ctx.fillText('EMAIL: alex.investor@apexcorp.com', 30, 85);
+      ctx.fillText('OTP: 894210  •  PHONE: +91 98765 43210', 30, 118);
+
+      // Update UI Badges
+      const badge = document.getElementById('sliderValBadge');
+      const statusText = document.getElementById('interactiveStatusText');
+      if (badge && statusText) {
+        if (isHigh) {
+          badge.style.background = 'rgba(16, 185, 129, 0.2)';
+          badge.style.color = '#34d399';
+          badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+          badge.textContent = `${confVal}% (READY ✓)`;
+
+          statusText.style.color = '#34d399';
+          statusText.innerHTML = `✓ Simulated Confidence is ${confVal}% (&ge; 80% Threshold) &bull; Parallax marks <code>isLowConfidence = false</code> &bull; Safe to proceed with automated guidance.`;
+        } else {
+          badge.style.background = 'rgba(244, 63, 94, 0.2)';
+          badge.style.color = '#fca5a5';
+          badge.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+          badge.textContent = `${confVal}% (BLOCKED ⚠️)`;
+
+          statusText.style.color = '#fca5a5';
+          statusText.innerHTML = `⚠️ Simulated Confidence is ${confVal}% (&lt; 80% Threshold) &bull; Parallax flags <code>isLowConfidence = true</code> &bull; Automated browser actions are safely <strong>BLOCKED</strong>.`;
+        }
+      }
+    }
+
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      drawHighConfCanvas();
+      drawLowConfCanvas();
+      updateInteractiveCanvas(65);
+
+      const slider = document.getElementById('confSlider');
+      if (slider) {
+        slider.addEventListener('input', (e) => {
+          updateInteractiveCanvas(parseInt(e.target.value, 10));
+        });
+      }
+    });
+  </script>
+</body>
+</html>

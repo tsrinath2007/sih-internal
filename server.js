@@ -65,6 +65,7 @@ app.get('/', (req, res) => {
         <h1>⚡ Parallax Live Cloud LLM Backend Online</h1>
         <p style="color: #94a3b8; margin: 12px 0;">Connected to Live Groq / Grok Cloud Engine (<code>openai/gpt-oss-120b</code>).</p>
         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
+          <p><a href="/test-pages/confidence-guardrail-demo.html">🛡️ <strong>Open 80% Confidence Guardrail & Fail-Safe Test (confidence-guardrail-demo.html)</strong></a></p>
           <p><a href="/test-pages/redaction-stress-test.html">🔥 <strong>Open Multi-Scale Redaction Stress Test (6.5px to 64px + Avatars)</strong></a></p>
           <p><a href="/test-pages/test-page-normal.html">👉 Open Standard Portal Test (test-page-normal.html)</a></p>
           <p><a href="/test-pages/test-page-lowconfidence.html">⚠️ Open Low-Confidence Edge Case Test (test-page-lowconfidence.html)</a></p>

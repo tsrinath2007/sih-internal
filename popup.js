@@ -306,19 +306,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const mergedWords = [...scaledDomWords];
         for (const ow of extractedWords) {
-          const isCovered = scaledDomWords.some(dw => {
+          const matchedDw = scaledDomWords.find(dw => {
             const xOverlap = Math.max(0, Math.min(dw.bbox.x + dw.bbox.width, ow.bbox.x + ow.bbox.width) - Math.max(dw.bbox.x, ow.bbox.x));
             const yOverlap = Math.max(0, Math.min(dw.bbox.y + dw.bbox.height, ow.bbox.y + ow.bbox.height) - Math.max(dw.bbox.y, ow.bbox.y));
             const dy = Math.abs(dw.bbox.y - ow.bbox.y);
             const dx = Math.abs(dw.bbox.x - ow.bbox.x);
             return (xOverlap > 4 && dy < 25) || (dx < 45 && dy < 25) || (dw.text && ow.text && dw.text.toLowerCase() === ow.text.toLowerCase() && dy < 30);
           });
-          if (!isCovered) {
+          if (!matchedDw) {
             mergedWords.push(ow);
+          } else if (ow.confidence != null && ow.confidence < matchedDw.confidence) {
+            matchedDw.confidence = Number(ow.confidence.toFixed(1));
           }
         }
 
-        const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0 });
+        const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 80.0, cardLuhnConfidenceThreshold: 20.0 });
 
         // Detect any visual face portraits in document/screenshot image (e.g. Aadhaar cards, ID badges)
         if (typeof PIIDetector.detectVisualFaces === 'function') {

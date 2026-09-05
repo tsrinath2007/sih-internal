@@ -78,9 +78,30 @@
             if (parent) rect = parent.getBoundingClientRect();
           }
           if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
+            const parent = node.parentElement;
+            let nodeConfidence = 99;
+            if (parent) {
+              const dataConf = parent.getAttribute('data-confidence') || parent.closest('[data-confidence]')?.getAttribute('data-confidence');
+              if (dataConf) {
+                nodeConfidence = Math.max(10, Math.min(99, parseFloat(dataConf)));
+              } else {
+                let curr = parent;
+                let minOp = 1.0;
+                while (curr && curr !== document.body) {
+                  const comp = window.getComputedStyle(curr);
+                  const op = parseFloat(comp.opacity);
+                  if (!isNaN(op)) minOp = Math.min(minOp, op);
+                  curr = curr.parentElement;
+                }
+                if (minOp < 0.8) {
+                  nodeConfidence = Math.max(20, Math.round(minOp * 100));
+                }
+              }
+            }
+
             words.push({
               text: match[0],
-              confidence: 99,
+              confidence: nodeConfidence,
               bbox: {
                 x: Math.round(rect.left),
                 y: Math.round(rect.top),
@@ -117,6 +138,24 @@
         const fontSize = parseFloat(computed.fontSize) || 14;
         const lineH = isTextarea ? (parseFloat(computed.lineHeight) || Math.round(fontSize * 1.35)) : Math.min(rect.height - 4, Math.max(16, Math.round(fontSize * 1.3)));
 
+        const dataConf = inp.getAttribute('data-confidence') || inp.closest('[data-confidence]')?.getAttribute('data-confidence');
+        let inpConfidence = 99;
+        if (dataConf) {
+          inpConfidence = Math.max(10, Math.min(99, parseFloat(dataConf)));
+        } else {
+          let curr = inp;
+          let minOp = 1.0;
+          while (curr && curr !== document.body) {
+            const comp = window.getComputedStyle(curr);
+            const op = parseFloat(comp.opacity);
+            if (!isNaN(op)) minOp = Math.min(minOp, op);
+            curr = curr.parentElement;
+          }
+          if (minOp < 0.8) {
+            inpConfidence = Math.max(20, Math.round(minOp * 100));
+          }
+        }
+
         if (isTextarea) {
           const lines = val.split('\n');
           let currY = rect.top + padTop;
@@ -135,7 +174,7 @@
                 text: p,
                 isPassword: isPassword,
                 isSecret: isSecret,
-                confidence: 99,
+                confidence: inpConfidence,
                 bbox: {
                   x: Math.round(currX),
                   y: Math.round(currY),
@@ -161,7 +200,7 @@
               text: p,
               isPassword: isPassword,
               isSecret: isSecret,
-              confidence: 99,
+              confidence: inpConfidence,
               bbox: {
                 x: Math.round(currX),
                 y: Math.round(rect.top + inputPadTop),

@@ -684,6 +684,26 @@ describe('PIIDetectorDOM Unit Tests', () => {
       expect(cardMatch.isLowConfidence).toBe(true);
       expect(result.isBlocked).toBe(true);
     });
+
+    it('enforces strict 80% confidence threshold: flags 75% as lowConfidence & BLOCKED, accepts 85% as SAFE', () => {
+      const lowEmailWords = [
+        { text: 'sarah.connor@cyberdyne.io', confidence: 75, bbox: { x: 50, y: 50, width: 180, height: 20 } }
+      ];
+      const lowResult = PIIDetector.detectPII(lowEmailWords);
+      expect(lowResult.matches.length).toBe(1);
+      expect(lowResult.matches[0].isLowConfidence).toBe(true);
+      expect(lowResult.isBlocked).toBe(true);
+      expect(lowResult.status).toContain('BLOCKED');
+
+      const highEmailWords = [
+        { text: 'sarah.connor@cyberdyne.io', confidence: 85, bbox: { x: 50, y: 50, width: 180, height: 20 } }
+      ];
+      const highResult = PIIDetector.detectPII(highEmailWords);
+      expect(highResult.matches.length).toBe(1);
+      expect(highResult.matches[0].isLowConfidence).toBe(false);
+      expect(highResult.isBlocked).toBe(false);
+      expect(highResult.status).toContain('READY');
+    });
   });
 
   describe('Cross-Validation Safety Check ("Position Uncertain")', () => {

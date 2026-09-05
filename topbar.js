@@ -419,26 +419,29 @@ function initTopbar() {
             }));
 
             // Run independent detections for Cross-Validation Safety Check
-            const domPiiResult = PIIDetector.detectPII(scaledDomWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
-            const ocrPiiResult = PIIDetector.detectPII(extractedWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
+            const domPiiResult = PIIDetector.detectPII(scaledDomWords, { confidenceThreshold: 80.0, cardLuhnConfidenceThreshold: 20.0 });
+            const ocrPiiResult = PIIDetector.detectPII(extractedWords, { confidenceThreshold: 80.0, cardLuhnConfidenceThreshold: 20.0 });
 
             // High-Precision Word Fusion: DOM Words + OCR Words
             const mergedWords = [...scaledDomWords];
             for (const ow of extractedWords) {
-              const isCovered = scaledDomWords.some(dw => {
+              const matchedDw = scaledDomWords.find(dw => {
                 const xOverlap = Math.max(0, Math.min(dw.bbox.x + dw.bbox.width, ow.bbox.x + ow.bbox.width) - Math.max(dw.bbox.x, ow.bbox.x));
                 const yOverlap = Math.max(0, Math.min(dw.bbox.y + dw.bbox.height, ow.bbox.y + ow.bbox.height) - Math.max(dw.bbox.y, ow.bbox.y));
                 const dy = Math.abs(dw.bbox.y - ow.bbox.y);
                 const dx = Math.abs(dw.bbox.x - ow.bbox.x);
                 return (xOverlap > 4 && dy < 25) || (dx < 45 && dy < 25) || (dw.text && ow.text && dw.text.toLowerCase() === ow.text.toLowerCase() && dy < 30);
               });
-              if (!isCovered) {
+              if (!matchedDw) {
                 mergedWords.push(ow);
+              } else if (ow.confidence != null && ow.confidence < matchedDw.confidence) {
+                // If visual OCR perceived lower confidence due to blur, noise, or faint ink, reflect visual confidence
+                matchedDw.confidence = Number(ow.confidence.toFixed(1));
               }
             }
 
             // Run Strict Core PII Detector on merged words (EMAIL, PHONE, CARD, OTP, AADHAAR, PAN, IFSC, DOB, AVATAR)
-            const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 35.0, cardLuhnConfidenceThreshold: 20.0 });
+            const piiDetection = PIIDetector.detectPII(mergedWords, { confidenceThreshold: 80.0, cardLuhnConfidenceThreshold: 20.0 });
 
             // --- CROSS-VALIDATION SAFETY CHECK ("POSITION UNCERTAIN") ---
             // If a DOM match and an OCR match reference similar text content but their
