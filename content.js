@@ -52,6 +52,9 @@
         if (!parent || parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE' || parent.tagName === 'NOSCRIPT' || parent.id === 'parallax-topbar-iframe') {
           return NodeFilter.FILTER_REJECT;
         }
+        if (parent.closest('[data-no-pii="true"], [data-exclude-pii="true"], .field-badge, .conf-tag, .policy-chip, .badge-guardrail')) {
+          return NodeFilter.FILTER_REJECT;
+        }
         const style = window.getComputedStyle(parent);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
           return NodeFilter.FILTER_REJECT;

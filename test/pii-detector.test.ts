@@ -844,6 +844,67 @@ describe('PIIDetectorDOM Unit Tests', () => {
       expect(preservedMatches.some((m: any) => m.bbox.x === 100)).toBe(true);
       expect(preservedMatches.some((m: any) => m.bbox.x === 220)).toBe(true);
     });
+
+    it('correctly classifies international 3-token phone numbers (+91 98450 12345) as PHONE and never as CARD', () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const PIIDetector = require('../pii-detector');
+
+      const phoneTokens = [
+        { text: '+91', confidence: 99, bbox: { x: 100, y: 100, width: 30, height: 18 } },
+        { text: '98450', confidence: 99, bbox: { x: 135, y: 100, width: 45, height: 18 } },
+        { text: '12345', confidence: 99, bbox: { x: 185, y: 100, width: 45, height: 18 } }
+      ];
+
+      const res = PIIDetector.detectPII(phoneTokens);
+      expect(res.matches.length).toBe(1);
+      expect(res.matches[0].type).toBe('PHONE');
+      expect(res.matches[0].matchedText).toBe('+91 98450 12345');
+    });
+
+    it('prevents cross-column line merging between left-column email badges and right-column phone numbers', () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const PIIDetector = require('../pii-detector');
+
+      const twoColWords = [
+        // Left Column: Business Email & Badge
+        { text: 'elena.rostova@horizoncapital.com', confidence: 99, bbox: { x: 100, y: 200, width: 220, height: 18 } },
+        { text: 'EMAIL', confidence: 99, bbox: { x: 330, y: 200, width: 40, height: 18 } },
+        { text: '(99%)', confidence: 99, bbox: { x: 375, y: 200, width: 35, height: 18 } },
+        // Right Column: Emergency Phone (> 120px gap)
+        { text: '+91', confidence: 99, bbox: { x: 550, y: 200, width: 25, height: 18 } },
+        { text: '91234', confidence: 99, bbox: { x: 580, y: 200, width: 45, height: 18 } },
+        { text: '56789', confidence: 99, bbox: { x: 630, y: 200, width: 45, height: 18 } }
+      ];
+
+      const res = PIIDetector.detectPII(twoColWords);
+      const types = res.matches.map((m: any) => m.type);
+      expect(types).toContain('EMAIL');
+      expect(types).toContain('PHONE');
+      expect(types).not.toContain('CARD'); // Must NOT cross-merge into a false card match!
+
+      const emailMatch = res.matches.find((m: any) => m.type === 'EMAIL');
+      expect(emailMatch.matchedText).toBe('elena.rostova@horizoncapital.com');
+
+      const phoneMatch = res.matches.find((m: any) => m.type === 'PHONE');
+      expect(phoneMatch.matchedText).toBe('+91 91234 56789');
+    });
+
+    it('retains the full email bounding box when OCR splits username by dot (marcus. audit@securityfirm.org)', () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const PIIDetector = require('../pii-detector');
+
+      const splitEmailWords = [
+        { text: 'marcus.', confidence: 95, bbox: { x: 100, y: 300, width: 55, height: 18 } },
+        { text: 'audit@securityfirm.org', confidence: 95, bbox: { x: 160, y: 300, width: 140, height: 18 } }
+      ];
+
+      const res = PIIDetector.detectPII(splitEmailWords);
+      expect(res.matches.length).toBe(1);
+      expect(res.matches[0].type).toBe('EMAIL');
+      expect(res.matches[0].matchedText).toBe('marcus. audit@securityfirm.org');
+      expect(res.matches[0].bbox.x).toBe(100);
+      expect(res.matches[0].bbox.width).toBe(200); // Encompasses both tokens
+    });
   });
 });
 

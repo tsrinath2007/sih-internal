@@ -700,7 +700,7 @@
             <span class="field-title">Account Holder</span>
             <div class="field-box">
               <span class="field-val-text">Elena Rostova</span>
-              <span class="field-badge badge-pass">DOM (99%)</span>
+              <span class="field-badge badge-pass" data-no-pii="true" aria-hidden="true">DOM (99%)</span>
             </div>
           </div>
 
@@ -708,7 +708,7 @@
             <span class="field-title">Primary Payment Card (Luhn Valid)</span>
             <div class="field-box">
               <span class="field-val-text">4532 0150 1234 5671</span>
-              <span class="field-badge badge-pass">CARD (98%)</span>
+              <span class="field-badge badge-pass" data-no-pii="true" aria-hidden="true">CARD (98%)</span>
             </div>
           </div>
 
@@ -716,7 +716,7 @@
             <span class="field-title">Business Email</span>
             <div class="field-box">
               <span class="field-val-text">elena.rostova@horizoncapital.com</span>
-              <span class="field-badge badge-pass">EMAIL (99%)</span>
+              <span class="field-badge badge-pass" data-no-pii="true" aria-hidden="true">EMAIL (99%)</span>
             </div>
           </div>
 
@@ -724,7 +724,7 @@
             <span class="field-title">Registered Phone</span>
             <div class="field-box">
               <span class="field-val-text">+91 98450 12345</span>
-              <span class="field-badge badge-pass">PHONE (99%)</span>
+              <span class="field-badge badge-pass" data-no-pii="true" aria-hidden="true">PHONE (99%)</span>
             </div>
           </div>
 
@@ -747,14 +747,14 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
               <span>Apex Security • Faint Verification Notice</span>
             </div>
-            <span class="conf-tag tag-blocked">&lt; 80% CONFIDENCE ⚠️</span>
+            <span class="conf-tag tag-blocked" data-no-pii="true" aria-hidden="true">&lt; 80% CONFIDENCE ⚠️</span>
           </div>
 
           <div class="field-row">
             <span class="field-title">Security Auditor Name (Faint Watermark)</span>
             <div class="field-box">
               <span class="field-val-text" data-confidence="65">Marcus Vance</span>
-              <span class="field-badge badge-fail">LOW CONTRAST (65%)</span>
+              <span class="field-badge badge-fail" data-no-pii="true" aria-hidden="true">LOW CONTRAST (65%)</span>
             </div>
           </div>
 
@@ -762,7 +762,7 @@
             <span class="field-title">Confidential Audit Email</span>
             <div class="field-box">
               <span class="field-val-text" data-confidence="68">marcus.audit@securityfirm.org</span>
-              <span class="field-badge badge-fail">EMAIL (&lt;80% ⚠️)</span>
+              <span class="field-badge badge-fail" data-no-pii="true" aria-hidden="true">EMAIL (&lt;80% ⚠️)</span>
             </div>
           </div>
 
@@ -770,7 +770,7 @@
             <span class="field-title">Emergency Hotline Phone</span>
             <div class="field-box">
               <span class="field-val-text" data-confidence="60">+91 91234 56789</span>
-              <span class="field-badge badge-fail">PHONE (&lt;80% ⚠️)</span>
+              <span class="field-badge badge-fail" data-no-pii="true" aria-hidden="true">PHONE (&lt;80% ⚠️)</span>
             </div>
           </div>
 
@@ -778,7 +778,7 @@
             <span class="field-title">One-Time Verification Passcode (Faint OTP)</span>
             <div class="field-box">
               <span class="field-val-text" data-confidence="55">OTP: 894210</span>
-              <span class="field-badge badge-fail">OTP (&lt;80% ⚠️)</span>
+              <span class="field-badge badge-fail" data-no-pii="true" aria-hidden="true">OTP (&lt;80% ⚠️)</span>
             </div>
           </div>
 
@@ -868,10 +868,10 @@
       ctx.fillStyle = '#f59e0b';
       ctx.fillRect(24, 20, 36, 26);
 
-      // Crisp White OCR-A Font for Card Number
+      // Crisp White OCR Font for Card Number (Luhn-Valid: 4532 0150 1234 5671)
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 18px "Courier New", monospace';
-      ctx.fillText('5412  7534  8901  2345', 24, 80);
+      ctx.fillText('4532 0150 1234 5671', 24, 80);
 
       // Cardholder & Expiry
       ctx.font = '11px -apple-system, sans-serif';
@@ -884,7 +884,7 @@
       ctx.fillText('ELENA ROSTOVA', 24, 126);
       ctx.fillText('08/29', 220, 126);
 
-      // MasterCard Logo
+      // Card Brand Logo
       ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
       ctx.beginPath();
       ctx.arc(w - 55, h - 35, 18, 0, Math.PI * 2);
@@ -905,34 +905,35 @@
       const w = cvs.width;
       const h = cvs.height;
 
-      // Washed out pale grey background
-      ctx.fillStyle = '#f1f5f9';
+      // Washed out pale background
+      ctx.fillStyle = '#f8fafc';
       ctx.fillRect(0, 0, w, h);
 
-      // Simulated security watermark crosshatch pattern
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = 1;
-      for (let x = 0; x < w; x += 12) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x + h, h);
-        ctx.stroke();
-      }
+      // Subtle background watermark pattern (legible to OCR but reduces confidence)
+      ctx.save();
+      ctx.translate(20, 40);
+      ctx.rotate(-0.06);
+      ctx.fillStyle = 'rgba(203, 213, 225, 0.35)';
+      ctx.font = '900 32px monospace';
+      ctx.fillText('SECURITY AUDIT', 10, 50);
+      ctx.restore();
 
-      // Faint washed-out receipt ink
-      ctx.fillStyle = '#a0aec0';
+      // Faint washed-out receipt ink (Slate-500/600 creates ~55-65% OCR confidence)
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText('SECURITY AUDIT RECEIPT #8892', 20, 32);
+
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText('OTP: 749210', 20, 64);
+
+      ctx.fillStyle = '#475569';
       ctx.font = 'bold 13px monospace';
-      ctx.fillText('TRANSACTION VERIFICATION CODE:', 20, 36);
+      ctx.fillText('CARD REF: 4532 0150 9876 5432', 20, 96);
 
-      // Faint OTP with watermark interference (induces OCR confidence ~58%)
-      ctx.fillStyle = '#b0bec5';
-      ctx.font = 'bold 17px monospace';
-      ctx.fillText('OTP: 749210', 20, 68);
-
-      ctx.fillStyle = '#a0aec0';
-      ctx.font = '11px monospace';
-      ctx.fillText('CARD REF: 4111 2222 3333 4444 (UNCONFIRMED)', 20, 98);
-      ctx.fillText('PHONE: +91 88765 43210', 20, 122);
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText('PHONE: +91 88765 43210', 20, 124);
     }
 
     // ------------------------------------------------------------------------

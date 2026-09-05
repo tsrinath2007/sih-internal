@@ -157,28 +157,51 @@
   function trimSlice(slice, type) {
     let result = [...slice];
     if (type === 'EMAIL') {
-      // Find the token that contains '@', '©', '﹫', '＠', or unwrapped '@'
       const atIdx = result.findIndex(w => /[@©﹫＠]/.test(w.text) || /[@©﹫＠]/.test(unwrapUnicodeSmallText(w.text)));
       if (atIdx !== -1) {
         let start = atIdx;
-        const normPrev = start > 0 ? unwrapUnicodeSmallText(result[start - 1].text) : '';
-        const normCurr = unwrapUnicodeSmallText(result[atIdx].text);
-        // If the token starts with '@', include the preceding token if it's alphanumeric username
-        if (start > 0 && /^[@©﹫＠]/.test(normCurr) && /^[a-zA-Z0-9._%+-]+$/.test(normPrev)) {
-          start--;
+        // Expand backwards if preceding token ends with '.', '_', '-', '+' or current token starts with '@'
+        while (start > 0) {
+          const prev = unwrapUnicodeSmallText(result[start - 1].text).trim();
+          const curr = unwrapUnicodeSmallText(result[start].text).trim();
+          if (
+            !/^(email|e-mail|mail|to|from|contact|badge):?$/i.test(prev) &&
+            (/^[a-zA-Z0-9._%+-]+$/.test(prev)) &&
+            (/[._%+-]$/.test(prev) || /^[@©﹫＠]/.test(curr))
+          ) {
+            start--;
+          } else {
+            break;
+          }
         }
         let end = atIdx;
-        const normNext = end < result.length - 1 ? unwrapUnicodeSmallText(result[end + 1].text) : '';
-        // If the token ends with '@' or '.', include the next token if it's domain part
-        if (end < result.length - 1 && (/[@©﹫＠]$/.test(normCurr) || /\.$/.test(normCurr)) && /^[a-zA-Z0-9.-]+$/.test(normNext)) {
-          end++;
+        // Expand forwards only if current token ends with '@', '.', or hasn't finished a valid TLD
+        while (end < result.length - 1) {
+          const curr = unwrapUnicodeSmallText(result[end].text).trim();
+          const next = unwrapUnicodeSmallText(result[end + 1].text).trim();
+          if (
+            !/^(email|badge|\(\d+%\))$/i.test(next) &&
+            (/[@©﹫＠]$/.test(curr) || /\.$/.test(curr) || !/\.[a-zA-Z]{2,}$/.test(curr)) &&
+            /^[a-zA-Z0-9.-]+$/.test(next)
+          ) {
+            end++;
+          } else {
+            break;
+          }
         }
         result = result.slice(start, end + 1);
       } else {
         result = result.filter(w => /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(unwrapUnicodeSmallText(w.text)));
       }
     } else if (type === 'CARD') {
-      // Keep entire matched card token slice (including OCR confusable digits and embossed blocks)
+      // Trim leading tokens that contain no digits or are common labels/badges
+      while (result.length > 1 && (!/\d/.test(result[0].text) || /^(card|cc|visa|mastercard|amex|credit|debit|val|valid|thru|no|num|number|ref|badge|\(\d+%\))$/i.test(unwrapUnicodeSmallText(result[0].text).replace(/[^a-zA-Z0-9%]/g, '')))) {
+        result.shift();
+      }
+      // Trim trailing tokens that contain no digits or are badges
+      while (result.length > 1 && (!/\d/.test(result[result.length - 1].text) || /^\(\d+%\)$/.test(unwrapUnicodeSmallText(result[result.length - 1].text)))) {
+        result.pop();
+      }
     } else if (type === 'AADHAAR') {
       while (result.length > 0 && !/\d/.test(unwrapUnicodeSmallText(result[0].text))) {
         result.shift();
@@ -291,8 +314,31 @@
       line.sort((a, b) => a.bbox.x - b.bbox.x);
     }
 
-    // Sliding window pass across words in lines
+    // Segment lines into distinct horizontal reading blocks/columns
+    // Prevents text from different columns/cards on the same vertical Y-row from merging
+    const segmentedLines = [];
     for (const line of lines) {
+      let currentSegment = [];
+      for (let wIdx = 0; wIdx < line.length; wIdx++) {
+        const w = line[wIdx];
+        if (currentSegment.length > 0) {
+          const prev = currentSegment[currentSegment.length - 1];
+          const gap = w.bbox.x - (prev.bbox.x + prev.bbox.width);
+          const maxSegmentGap = Math.max(85, (prev.bbox.height || 20) * 2.8);
+          if (gap > maxSegmentGap) {
+            segmentedLines.push(currentSegment);
+            currentSegment = [];
+          }
+        }
+        currentSegment.push(w);
+      }
+      if (currentSegment.length > 0) {
+        segmentedLines.push(currentSegment);
+      }
+    }
+
+    // Sliding window pass across words in lines
+    for (const line of segmentedLines) {
       const n = line.length;
       for (let winSize = Math.min(8, n); winSize >= 1; winSize--) {
         for (let i = 0; i <= n - winSize; i++) {
@@ -304,7 +350,7 @@
           let gapTooBig = false;
           for (let g = 0; g < rawSlice.length - 1; g++) {
             const gap = rawSlice[g + 1].bbox.x - (rawSlice[g].bbox.x + rawSlice[g].bbox.width);
-            const maxAllowedGap = Math.max(160, (rawSlice[g].bbox.height || 20) * 4.5);
+            const maxAllowedGap = Math.max(85, (rawSlice[g].bbox.height || 20) * 2.8);
             if (gap > maxAllowedGap) {
               gapTooBig = true;
               break;
@@ -393,14 +439,17 @@
           }
           // 6. PAYMENT CARD NUMBERS
           else if (
-            !/^(account|acc|wire|phone|tel|ifsc|pan|dob|aadhaar|aadhar)/i.test(prevWord1) &&
+            !/^(account|acc|wire|phone|tel|mobile|mob|cell|hotline|contact|call|ifsc|pan|dob|aadhaar|aadhar)/i.test(prevWord1) &&
+            !/^(phone|tel|mobile|mob|cell|hotline|contact|call)/i.test(prevWord2) &&
+            !cleanText.includes('+') &&
+            !rawSlice.some(w => w.text.includes('+')) &&
             (
               // 1. Any Standard 16-Digit Card Number (continuous or 4x4 blocks, all prefixes 0-9)
               (digits.length === 16 && (cleanNone.length === 16 || /^(\d{4}[\s\-]?){4}$/.test(cleanText.replace(/[^0-9\s\-]/g, '')))) ||
               // 2. Standard 15-Digit Amex (34/37) or 15-digit card
-              (digits.length === 15 && (/^3[47]/.test(digits) || luhnCheck(digits) || hasDocumentCardContext)) ||
+              (digits.length === 15 && (/^3[47]/.test(digits) || luhnCheck(digits))) ||
               // 3. Validated Luhn Check on Pure Digits (Real Cards: 13-19 digits)
-              (digits.length >= 13 && digits.length <= 19 && (luhnCheck(digits) || hasDocumentCardContext)) ||
+              (digits.length >= 13 && digits.length <= 19 && luhnCheck(digits)) ||
               // 4. Formatted 4-Block Embossed Card (e.g. 5476 7678 9876 5432, S476 7E78 9875 5432, SH7h PERE 9676 5432)
               (
                 rawSlice.length === 4 &&
@@ -418,16 +467,11 @@
                 rawSlice.length === 3 &&
                 cleanNone.length >= 10 && cleanNone.length <= 18 &&
                 digits.length >= 5 &&
+                /^[45236Ss]/.test(unwrapUnicodeSmallText(rawSlice[0].text).replace(/[^a-zA-Z0-9]/g, '')) &&
+                /\d{2,4}$/.test(unwrapUnicodeSmallText(rawSlice[2].text).replace(/[^a-zA-Z0-9]/g, '')) &&
                 unwrapUnicodeSmallText(rawSlice[0].text).replace(/\D/g, '').length >= 2 &&
                 unwrapUnicodeSmallText(rawSlice[2].text).replace(/\D/g, '').length >= 2 &&
-                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100 &&
-                (
-                  (
-                    /^[45236Ss]/.test(unwrapUnicodeSmallText(rawSlice[0].text).replace(/[^a-zA-Z0-9]/g, '')) &&
-                    /\d{2,4}$/.test(unwrapUnicodeSmallText(rawSlice[2].text).replace(/[^a-zA-Z0-9]/g, ''))
-                  ) ||
-                  digits.length >= 8
-                )
+                computeMergedBbox(rawSlice.map(w => w.bbox)).width >= 100
               ) ||
               // 6. Standard Card Format regex with pure digits
               (/^(\d{4}[\s\-]?){3}\d{4}$/.test(cleanText)) ||
