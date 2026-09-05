@@ -12,7 +12,7 @@
     top: 0;
     left: 0;
     width: 100vw;
-    height: 54px;
+    height: 58px;
     z-index: 2147483647;
     border: none;
     background: transparent;
@@ -21,7 +21,7 @@
   `;
 
   document.documentElement.appendChild(iframe);
-  document.body.style.marginTop = '54px';
+  document.body.style.marginTop = '58px';
 
   let isVisible = true;
 
@@ -286,7 +286,7 @@
     }
 
     if (event.data.type === 'PARALLAX_RESIZE_IFRAME') {
-      iframe.style.height = event.data.height || '54px';
+      iframe.style.height = event.data.height || '58px';
     }
 
     if (event.data.type === 'PARALLAX_PREPARE_CAPTURE') {
@@ -323,7 +323,7 @@
     if (message && message.action === 'TOGGLE_TOPBAR') {
       isVisible = !isVisible;
       iframe.style.display = isVisible ? 'block' : 'none';
-      document.body.style.marginTop = isVisible ? '54px' : '0px';
+      document.body.style.marginTop = isVisible ? '58px' : '0px';
       sendResponse({ visible: isVisible });
       return true;
     }

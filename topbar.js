@@ -4,7 +4,10 @@
 // When true, draws DOM-sourced boxes in blue (#3b82f6) and OCR-sourced boxes in yellow (#eab308)
 window.PARALLAX_DEBUG = typeof window.PARALLAX_DEBUG !== 'undefined' ? window.PARALLAX_DEBUG : false;
 
-document.addEventListener('DOMContentLoaded', async () => {
+function initTopbar() {
+  if (window._parallaxTopbarInitialized) return;
+  window._parallaxTopbarInitialized = true;
+
   let isScanning = false;
   let currentScanData = null;
   let isDrawerOpen = false;
@@ -168,8 +171,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Load metrics initially
-  await renderMetricsAndLogs();
+  // Load metrics initially in background without blocking UI
+  renderMetricsAndLogs().catch((e) => console.warn('[Parallax] Initial metrics load error:', e));
 
   // Wire log buttons
   if (refreshLogBtn) refreshLogBtn.addEventListener('click', renderMetricsAndLogs);
@@ -266,7 +269,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function executePerceptionScan() {
     if (isScanning) return;
     isScanning = true;
-    if (scanBtn) scanBtn.disabled = true;
+    if (scanBtn) {
+      scanBtn.disabled = true;
+      scanBtn.classList.add('scanning');
+    }
 
     setStatus('Capturing Viewport...', 'capturing');
 
@@ -280,15 +286,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       // screenshot pixel coordinate space, we capture the DOM snapshot (including
       // viewportWidth and viewportHeight) in the exact same tick / execution window as
       // chrome.tabs.captureVisibleTab(), before heavy async OCR processing begins.
-      //
-      // Previously, domWordsPromise was fired before hiding the iframe, followed by a 90ms delay,
-      // followed by capture, and then awaited AFTER heavy async OCR processing (500ms-2000ms later).
-      // Any DOM reflow, scroll, or resize during that window resulted in misaligned scaleX/scaleY.
-      //
-      // With Promise.all here:
-      // 1. Both the DOM reader and captureVisibleTab sample the exact same live viewport state.
-      // 2. The host iframe is restored immediately once the visual snapshot and metrics are locked.
-      // 3. Downscale and OCR run asynchronously afterward without affecting spatial alignment.
       const domWordsPromise = new Promise((resolve) => {
         const handler = (event) => {
           if (event.data && event.data.type === 'PARALLAX_DOM_WORDS_RESPONSE') {
@@ -302,13 +299,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       const capturePromise = new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'SCAN_REQUEST' }, (res) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message });
-          } else {
-            resolve(res || { success: false, error: 'Capture failed.' });
-          }
-        });
+        const timer = setTimeout(() => {
+          resolve({ success: false, error: 'Screenshot capture timed out after 8s.' });
+        }, 8000);
+
+        try {
+          chrome.runtime.sendMessage({ action: 'SCAN_REQUEST' }, (res) => {
+            clearTimeout(timer);
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              resolve(res || { success: false, error: 'Capture failed.' });
+            }
+          });
+        } catch (err) {
+          clearTimeout(timer);
+          resolve({ success: false, error: err.message });
+        }
       });
 
       const [domData, captureResponse] = await Promise.all([domWordsPromise, capturePromise]);
@@ -330,27 +337,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       let rawWords = [];
       try {
-        const worker = await getPersistentWorker();
-        if (worker) {
+        const workerPromise = (async () => {
+          const worker = await getPersistentWorker();
+          if (!worker) return [];
           const ocrResult = await worker.recognize(optimizedImage.dataUrl, {}, {
             text: true,
             blocks: true
           });
 
           if (ocrResult.data && Array.isArray(ocrResult.data.words) && ocrResult.data.words.length > 0) {
-            rawWords = ocrResult.data.words;
+            return ocrResult.data.words;
           } else if (ocrResult.data && Array.isArray(ocrResult.data.blocks)) {
+            const words = [];
             for (const block of ocrResult.data.blocks) {
               for (const p of (block.paragraphs || [])) {
                 for (const line of (p.lines || [])) {
                   for (const w of (line.words || [])) {
-                    rawWords.push(w);
+                    words.push(w);
                   }
                 }
               }
             }
+            return words;
           }
-        }
+          return [];
+        })();
+
+        rawWords = await Promise.race([
+          workerPromise,
+          new Promise((resolve) => setTimeout(() => {
+            console.warn('[Parallax] OCR recognition timed out after 15s; continuing with DOM spatial extractor');
+            resolve([]);
+          }, 15000))
+        ]);
       } catch (ocrErr) {
         console.warn('[Parallax] OCR perception fallback to DOM spatial extractor:', ocrErr);
       }
@@ -760,7 +779,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       setStatus(`Error: ${err.message}`, 'error');
     } finally {
       isScanning = false;
-      if (scanBtn) scanBtn.disabled = false;
+      if (scanBtn) {
+        scanBtn.disabled = false;
+        scanBtn.classList.remove('scanning');
+      }
     }
   }
 
@@ -907,4 +929,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       closeFullscreen();
     }
   });
-});
+}
+
+// Auto-run initTopbar immediately if document is already ready, or on DOMContentLoaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initTopbar);
+} else {
+  initTopbar();
+}
+

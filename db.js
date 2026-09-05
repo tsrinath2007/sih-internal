@@ -45,26 +45,54 @@
   function initDB() {
     if (dbPromise) return dbPromise;
 
+    if (typeof indexedDB === 'undefined') {
+      return Promise.reject(new Error('IndexedDB not available in current context'));
+    }
+
     dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
-          store.createIndex('timestamp', 'timestamp', { unique: false });
-          store.createIndex('blocked', 'blocked', { unique: false });
+      let isSettled = false;
+      const timeoutTimer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          reject(new Error('IndexedDB open timed out after 3000ms'));
         }
-      };
+      }, 3000);
 
-      request.onsuccess = (event) => {
-        resolve(event.target.result);
-      };
+      try {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onerror = (event) => {
-        console.error('[ParallaxDB] Failed to open IndexedDB:', event.target.error);
-        reject(event.target.error);
-      };
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            store.createIndex('timestamp', 'timestamp', { unique: false });
+            store.createIndex('blocked', 'blocked', { unique: false });
+          }
+        };
+
+        request.onsuccess = (event) => {
+          if (!isSettled) {
+            isSettled = true;
+            clearTimeout(timeoutTimer);
+            resolve(event.target.result);
+          }
+        };
+
+        request.onerror = (event) => {
+          if (!isSettled) {
+            isSettled = true;
+            clearTimeout(timeoutTimer);
+            console.warn('[ParallaxDB] Failed to open IndexedDB:', event.target.error);
+            reject(event.target.error);
+          }
+        };
+      } catch (err) {
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timeoutTimer);
+          reject(err);
+        }
+      }
     });
 
     return dbPromise;
